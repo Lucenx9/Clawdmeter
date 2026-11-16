@@ -154,7 +154,7 @@ static void seat(void) {
     mode = CM_SEATED;
     x = slot_x;
     seated_since = now_ms();
-    idle_gap = clawd_jitter(6000, &rng);
+    idle_gap = clawd_jitter(6000UL * clawd_tuning().idle_gap_pct / 100, &rng);
     set_visible(true);
 }
 
@@ -222,7 +222,7 @@ void codex_sprite_hop(void) {
 }
 
 void codex_sprite_react(char event) {
-    if (minimal || !idle_now()) return;
+    if (minimal || !clawd_tuning().reactions || !idle_now()) return;
     if (event == 's') { codex_sprite_hop(); return; }
     if (event == 'p') { mode = CM_THINK; started = now_ms(); }
 }
@@ -297,11 +297,11 @@ void codex_sprite_tick(void) {
         break;
     }
     case CM_SEATED:
-        if (!minimal && now - seated_since >= idle_gap) { start_act(); return; }
+        if (!minimal && clawd_tuning().idle_acts && now - seated_since >= idle_gap) { start_act(); return; }
         break;
     default:
         break;
     }
-    if (mode == CM_SEATED) l.cursor = minimal || ((now / BLINK_MS) % 2 == 0);
+    if (mode == CM_SEATED) l.cursor = minimal || !clawd_tuning().spinner || ((now / BLINK_MS) % 2 == 0);
     show_look(l);
 }

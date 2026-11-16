@@ -230,6 +230,8 @@ static bool have_last_data = false;
 // corner Clawd for the Codex cloud); the cards show Codex only while the
 // payload carries it.
 static int      page = 0;
+static bool     have_rendered_page = false;
+static bool     rendered_codex = false;
 static void render_page(void);
 // The cards' fonts for the page on screen: Claude's Styrene, or the Codex
 // page's Geist Mono (layout.cpp fit_codex).
@@ -908,7 +910,7 @@ static UsageData codex_view(const UsageData* d, const char** pills) {
     return v;
 }
 
-static void render_meters(const UsageData* data, const char* const* pills);
+static void render_meters(const UsageData* data, const char* const* pills, lv_anim_enable_t animation);
 
 // Draw the current page from the last payload.
 // The cards' fonts: Geist Mono on the Codex page, Styrene on Claude's.
@@ -927,6 +929,9 @@ static void apply_page_fonts(bool codex) {
 static void render_page(void) {
     if (!have_last_data) return;
     const bool codex = page == 1 && usage_has_codex(&last_data);
+    // A different service is a new reading, not a rise/fall in the old one.
+    const lv_anim_enable_t animation = have_rendered_page && codex == rendered_codex
+                                      ? LV_ANIM_ON : LV_ANIM_OFF;
     apply_page_fonts(codex);
     if (clock_base_epoch <= 0) {
         const char* service = codex ? "Codex" : "Claude";
@@ -937,11 +942,13 @@ static void render_page(void) {
         const char* pills[PILL_COUNT];
         for (int i = 0; i < PILL_COUNT; i++) pills[i] = L.pills[i];
         shown_data = codex_view(&last_data, pills);
-        render_meters(&shown_data, pills);
+        render_meters(&shown_data, pills, animation);
     } else {
         shown_data = last_data;
-        render_meters(&shown_data, L.pills);
+        render_meters(&shown_data, L.pills, animation);
     }
+    rendered_codex = codex;
+    have_rendered_page = true;
 }
 
 bool ui_codex_available(void) { return have_last_data && usage_has_codex(&last_data); }
@@ -957,7 +964,7 @@ void ui_show_codex_page(bool on) {
 
 bool ui_codex_page(void) { return page == 1; }
 
-static void render_meters(const UsageData* data, const char* const* pills) {
+static void render_meters(const UsageData* data, const char* const* pills, lv_anim_enable_t animation) {
     int s_pct = (int)(data->session_pct + 0.5f);
     const SingleCardLayout single = layout_codex_single(L);
     const bool expanded = codex_shown() && data->weekly_only && single.expanded;
@@ -1009,20 +1016,20 @@ static void render_meters(const UsageData* data, const char* const* pills) {
                      data->weekly_only ? "Unknown" : "Not started", inner_w, reset_y);
     }
 
-    lv_bar_set_value(bar_session, s_pct, LV_ANIM_ON);
+    lv_bar_set_value(bar_session, s_pct, animation);
 
     if (data->enterprise) {
         // Period box: time % + dynamic pace color + "Resets <date>" label
         lv_label_set_text(lbl_weekly_label, pills[3]);
         lv_label_set_text_fmt(lbl_weekly_pct, "%d%%", data->time_pct);
-        lv_bar_set_value(bar_weekly, data->time_pct, LV_ANIM_ON);
+        lv_bar_set_value(bar_weekly, data->time_pct, animation);
         lv_obj_set_style_text_font(lbl_weekly_reset, L.period_font, 0);
         apply_period_colors(data);
     } else {
         int w_pct = (int)(data->weekly_pct + 0.5f);
         lv_label_set_text(lbl_weekly_label, pills[1]);
         lv_label_set_text_fmt(lbl_weekly_pct, "%d%%", w_pct);
-        lv_bar_set_value(bar_weekly, w_pct, LV_ANIM_ON);
+        lv_bar_set_value(bar_weekly, w_pct, animation);
         lv_obj_set_style_text_font(lbl_weekly_reset, cur_reset_font ? cur_reset_font : L.reset_font, 0);
         render_reset(lbl_weekly_reset, data->weekly_reset_mins,
                      "Unknown", L.card[1].w - 2 * L.pad_x, L.reset_y);

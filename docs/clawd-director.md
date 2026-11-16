@@ -247,6 +247,14 @@ creature on screen (`test_director` counts the Codex cloud too):
 
 Minimal mode swaps the page and the still sprites with no walk or hop.
 
+The cloud follows the same liveliness tuning as Clawd: No-nonsense holds
+its cursor still and disables idle acts and hook reactions. Taps and alerts
+still get their feedback; an act already playing finishes before it rests.
+The other levels scale its idle gaps with the existing `idle_gap_pct`.
+On a page turn the bars take the new service's values at once, without
+interpolating from the other service's usage. Updates on the same page keep
+the usual bar animation.
+
 A single Codex limit uses the rectangle occupied by both cards, with its
 label, percentage, bar and reset on separate rows. The percentage grows up
 to 48 px in Geist Mono, fitted against the real font metrics. On a short

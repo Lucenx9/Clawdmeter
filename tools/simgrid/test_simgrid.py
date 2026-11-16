@@ -160,6 +160,96 @@ class RunTest(unittest.TestCase):
             finally:
                 e.close()
 
+    def test_page_turn_sets_bars_to_the_new_service_without_interpolation(self):
+        with tempfile.TemporaryDirectory() as out:
+            e = eng.Engine("154", log_dir=out)
+            try:
+                e.liveliness(1)
+                e.payload(s=95, w=90, os=10, osr=150, ow=20, owr=5040)
+                e.step(1500)
+
+                def codex_fill():
+                    image = e.frame("154")
+                    return max(sum(b > r + 15 and b > g + 15
+                                   for r, g, b in (image.getpixel((x, y)) for x in range(18, 222)))
+                               for y in range(70, 100))
+
+                e.beat("codex")
+                for _ in range(250):
+                    e.step(16)
+                    if codex_fill():
+                        break
+                else:
+                    self.fail("the Codex page must appear")
+                self.assertAlmostEqual(codex_fill(), 20, delta=2,
+                                       msg="the first 10% Codex frame must not inherit Claude's 95% fill")
+                e.step(250)
+                e.payload(os=80)
+                e.step(16)
+                first = codex_fill()
+                e.step(250)
+                self.assertGreater(codex_fill(), first + 40,
+                                   "a change within the same Codex window still animates")
+                e.beat("codex")
+                for _ in range(250):
+                    e.step(16)
+                    if not codex_fill():
+                        break
+                else:
+                    self.fail("the Claude page must return")
+                image = e.frame("154")
+                fill = max(sum(r > g + 15 and r > b + 15
+                               for r, g, b in (image.getpixel((x, y)) for x in range(18, 222)))
+                           for y in range(70, 100))
+                self.assertGreater(fill, 185, "Claude's 95% fill must return on its first frame")
+                e.beat("codex")
+                e.step(4000)
+                self.assertGreater(codex_fill(), 150, "Codex's 80% fill must be visible before the update")
+                e.payload(os=95)
+                e.step(16)
+                e.payload(os=None, osr=None, ow=None, owr=None)
+                e.step(16)
+                image = e.frame("154")
+                fill = max(sum(r > g + 15 and r > b + 15
+                               for r, g, b in (image.getpixel((x, y)) for x in range(18, 222)))
+                           for y in range(70, 100))
+                self.assertGreater(fill, 185, "a matching target must also cancel the old service's animation")
+            finally:
+                e.close()
+
+    def test_codex_respects_no_nonsense_but_keeps_tap_feedback(self):
+        with tempfile.TemporaryDirectory() as out:
+            e = eng.Engine("154", log_dir=out)
+            try:
+                e.liveliness(1)
+                e.payload(os=31, osr=150, ow=42, owr=5040)
+                e.step(1500)
+                e.beat("codex")
+                e.step(4000)
+
+                def cloud():
+                    return e.frame("154").crop((0, 0, 55, 44)).tobytes()
+
+                still = cloud()
+                for _ in range(10):
+                    e.step(300)
+                    self.assertEqual(cloud(), still, "No-nonsense must hold the cloud still")
+                for seq, event in enumerate(("p", "s"), 1):
+                    e.payload(oe=event, oes=seq)
+                    e.step(150)
+                    self.assertEqual(cloud(), still, "background hooks must respect No-nonsense")
+                e.tap("154", 120, 80, hold_ms=50)
+                e.step(80)
+                self.assertNotEqual(cloud(), still, "an explicit tap still gets a hop")
+                e.step(600)
+                self.assertEqual(cloud(), still, "the hop settles back to a still cloud")
+                e.liveliness(3)
+                before = cloud()
+                e.step(530)
+                self.assertNotEqual(cloud(), before, "normal liveliness keeps the cursor animation")
+            finally:
+                e.close()
+
 
 if __name__ == "__main__":
     unittest.main()
