@@ -485,6 +485,21 @@ static bool place_round(Layout& L, const Design& d, const Chrome** chrome) {
 
 // ─── Entry point ─────────────────────────────────────────────────────────────
 
+// The Codex page's pills: the longest set whose row fits the cards as laid
+// out for Claude (the last set always applies).
+static void fit_codex_pills(Layout& L) {
+    const int16_t inner = L.card[0].w - 2 * L.pad_x;
+    const int16_t room = inner - layout_text_width(L.pct_font, "100%") - PILL_GAP - 2 * L.pill_pad_x;
+    const int n = sizeof(CODEX_PILL_SETS) / sizeof(CODEX_PILL_SETS[0]);
+    L.codex_pills = CODEX_PILL_SETS[n - 1];
+    for (int i = 0; i < n; i++) {
+        if (widest(L.pill_font, CODEX_PILL_SETS[i], 2) <= room) {
+            L.codex_pills = CODEX_PILL_SETS[i];
+            return;
+        }
+    }
+}
+
 Layout layout_compute(const LayoutShape& shape) {
     Layout L = {};
     L.w = shape.w;
@@ -513,6 +528,7 @@ Layout layout_compute(const LayoutShape& shape) {
     fit_title(L, *c);
     fit_pairing(L, *d);
     fit_period(L);
+    fit_codex_pills(L);
     return L;
 }
 

@@ -42,11 +42,22 @@ struct UsageData {
     int32_t  btn_primary;    // `k1` PRIMARY button action (button_action.h); -1 = absent
     int32_t  btn_secondary;  // `k2` the same for SECONDARY; -1 = absent
     int32_t  btn_pwr;        // `k3` the same for a PWR short press; -1 = absent
+    // ---- Codex page (optional). -1 = absent: no such window or no Codex
+    // data; both absent = no Codex page.
+    int16_t  codex_session_pct;        // `os`  Codex 5-hour window % used
+    int      codex_session_reset_mins; // `osr` minutes until it resets, -1 unknown
+    int16_t  codex_weekly_pct;         // `ow`  Codex weekly window % used
+    int      codex_weekly_reset_mins;  // `owr` minutes until it resets, -1 unknown
     bool     has_theme;      // `th` present and well-formed
     uint32_t theme[TH_COUNT];// `th` the palette, 0xRRGGBB per token (theme_palette.h)
     bool ok;                 // data parse succeeded
     bool valid;              // false until first successful parse
 };
+
+// The payload carried Codex numbers: the meters get a second page.
+static inline bool usage_has_codex(const UsageData* d) {
+    return d->codex_session_pct >= 0 || d->codex_weekly_pct >= 0;
+}
 
 // What session_pct measures: 0 the 5-hour session, 1 the week (weekly_only),
 // 2 the spend (enterprise). A change of kind is not a reset or a rise.

@@ -14,6 +14,7 @@ use clawdmeter_ble::{
 };
 use clawdmeter_core::attention::AttentionInbox;
 use clawdmeter_core::backoff;
+use clawdmeter_core::codex;
 use clawdmeter_core::engine::PollPlan;
 use clawdmeter_core::events::EventTail;
 use clawdmeter_core::platform::AppearanceWatch;
@@ -134,6 +135,12 @@ fn reload_settings(paths: &Paths, engine: &mut Engine, claude: &mut Option<PathB
 }
 
 type PollResults = Vec<(PathBuf, probe::Polled)>;
+type CodexResult = Option<Result<codex::CodexReading, usage::UsageError>>;
+
+/// Codex's home dir (`$CODEX_HOME`, else `~/.codex`).
+fn codex_home(paths: &Paths) -> PathBuf {
+    codex::codex_home(&paths.home, std::env::var("CODEX_HOME").ok().as_deref())
+}
 type ConnectResult = Result<(DeviceLink, DeviceEvents), LinkError>;
 
 /// Read each account of a poll plan: the probe, `/usage`, or a reading known
@@ -193,6 +200,8 @@ pub async fn run(paths: Paths, mut commands: mpsc::UnboundedReceiver<Command>, s
     let mut device_events: Option<DeviceEvents> = None;
     let mut connecting: Option<JoinHandle<ConnectResult>> = None;
     let mut polling: Option<JoinHandle<PollResults>> = None;
+    let mut codex_polling: Option<JoinHandle<CodexResult>> = None;
+    let codex_dir = codex_home(&paths);
     let mut link_state = LinkState::Starting;
     let mut reconnect = Reconnect::default();
     let bt = Bluetooth::default();
@@ -324,6 +333,23 @@ pub async fn run(paths: Paths, mut commands: mpsc::UnboundedReceiver<Command>, s
                 let (c, home, cwd) = (claude.clone(), paths.home.clone(), paths.state_dir.clone());
                 polling = Some(tokio::task::spawn_blocking(move || poll_all(c, plan, home, cwd)));
             }
+        }
+
+        // ---- Codex (its own clock, independent of Claude's accounts) ----
+        if codex_polling.as_ref().is_some_and(JoinHandle::is_finished) {
+            if let Ok(r) = codex_polling.take().expect("checked").await {
+                match &r {
+                    Some(Err(e)) => log::warn!("codex: {e}"),
+                    Some(Ok(c)) => log::debug!("codex: {c:?}"),
+                    None => log::debug!("codex: not signed in with ChatGPT"),
+                }
+                engine.on_codex_result(unix_now(), r);
+            }
+        }
+        if codex_polling.is_none() && engine.codex_due(now) {
+            engine.begin_codex_poll(now);
+            let dir = codex_dir.clone();
+            codex_polling = Some(tokio::task::spawn_blocking(move || codex::poll(&dir, chrono::Utc::now())));
         }
 
         // ---- link ----
@@ -483,6 +509,20 @@ pub fn once(paths: &Paths) -> i32 {
         }
     }
     engine.on_poll_results(now, results);
+    if settings.codex {
+        let r = codex::poll(&codex_home(paths), chrono::Utc::now());
+        match &r {
+            Some(Ok(c)) => println!(
+                "codex: 5-hour {}, week {}",
+                c.session.as_ref().map_or("none".into(), |w| format!("{}%", w.pct)),
+                c.week.as_ref().map_or("none".into(), |w| format!("{}%", w.pct)),
+            ),
+            Some(Err(e)) => println!("codex: {e}"),
+            None => println!("codex: not signed in with ChatGPT"),
+        }
+        engine.begin_codex_poll(now);
+        engine.on_codex_result(now, r);
+    }
     if let Err(e) = backoff::save_blocks(&paths.usage_blocks_file(), &engine.blocks(unix_now())) {
         eprintln!("couldn't save usage blocks: {e}");
     }

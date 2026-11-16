@@ -159,6 +159,9 @@ static void check_panel(const Panel& p) {
     for (int i : { 0, 1, 3 })   // session, weekly, period: "100%" beside the pill
         if (text_w(L.pct_font, "100%") + pill_w + text_w(L.pill_font, L.pills[i]) > inner_w)
             fail("percentage vs pill", card(i == 0 ? 0 : 1));
+    for (int i : { 0, 1 })   // the Codex page's pills
+        if (text_w(L.pct_font, "100%") + pill_w + text_w(L.pill_font, L.codex_pills[i]) > inner_w)
+            fail("percentage vs Codex pill", card(i));
     if (text_w(L.ent_pct_font, "100") + 4 + text_w(L.reset_font, "%") + pill_w
         + text_w(L.pill_font, L.pills[2]) > inner_w)
         fail("spending vs pill", card(0));

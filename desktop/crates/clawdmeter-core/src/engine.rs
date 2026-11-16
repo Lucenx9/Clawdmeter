@@ -11,6 +11,7 @@ use chrono::{DateTime, TimeZone, Utc};
 use crate::attention::{Alert, AttentionState};
 use crate::backoff::SavedBlock;
 use crate::cadence::{heartbeat_due, AccountClock, Cadence, PollReason, Scheduler};
+use crate::codex::{CodexReading, CodexState};
 use crate::config::{ButtonAction, Palette, Settings};
 use crate::events::{Activity, HookEvent, Signal};
 use crate::payload::{clock_fields, Payload};
@@ -118,6 +119,10 @@ pub struct EngineStatus {
     pub paused_until: Option<i64>,
     /// The shown account is being polled.
     pub polling: bool,
+    /// Codex's latest reading, while recent enough to show.
+    pub codex: Option<CodexReading>,
+    /// Codex's last miss.
+    pub codex_error: Option<String>,
 }
 
 /// The daemon state machine.
@@ -161,6 +166,10 @@ pub struct Engine {
     claude_found: bool,
     /// A new alert should chime on this computer (`desktop_chime`).
     desktop_chime_due: bool,
+    /// OpenAI Codex usage (the device's second page).
+    codex: CodexState,
+    /// Codex's percentages the device last got (`os`, `ow`).
+    sent_codex: Option<(Option<u32>, Option<u32>)>,
 }
 
 fn utc(now: i64) -> DateTime<Utc> {
@@ -200,6 +209,8 @@ impl Engine {
             unattributed_activity: None,
             claude_found: true,
             desktop_chime_due: false,
+            codex: CodexState::default(),
+            sent_codex: None,
         }
     }
 
@@ -307,6 +318,7 @@ impl Engine {
         self.sent_k = None;
         self.sent_th = None;
         self.sent_tf = None;
+        self.sent_codex = None;
         if self.active.is_some() || self.logged_out {
             self.fresh_poll = true;
         }
@@ -487,6 +499,29 @@ impl Engine {
         self.active_state().and_then(|a| a.last.as_ref())
     }
 
+    /// A Codex poll is due (`codex` is on and its cadence allows one).
+    pub fn codex_due(&self, now: i64) -> bool {
+        self.settings.codex && self.codex.due(now)
+    }
+
+    /// A Codex poll starts now.
+    pub fn begin_codex_poll(&mut self, now: i64) {
+        self.codex.last_attempt = Some(now);
+    }
+
+    /// A Codex poll's answer; `None` = Codex isn't signed in here.
+    pub fn on_codex_result(&mut self, now: i64, r: Option<Result<CodexReading, UsageError>>) {
+        match r {
+            Some(r) => self.codex.record(now, r),
+            None => self.codex.record_signed_out(now),
+        }
+    }
+
+    /// What the device's Codex page shows now, if anything.
+    fn codex_shown(&self, now: i64) -> Option<&CodexReading> {
+        self.codex.current(now).filter(|_| self.settings.codex)
+    }
+
     /// The shown account has missed three polls in a row.
     pub fn stale(&self, now: i64) -> bool {
         self.active_state().is_some_and(|a| a.is_stale(now))
@@ -511,6 +546,11 @@ impl Engine {
         let th = self.colors();
         let clock = clock_fields(self.settings.clock, utc(now), host.utc_offset_secs, host.prefers_12h);
         let tf = clock.as_ref().map_or(0, |cf| cf.hour_format);
+        let codex = self.codex_shown(now).cloned();
+        let codex_pcts = codex
+            .as_ref()
+            .map_or((None, None), |r| (r.session.as_ref().map(|w| w.pct), r.week.as_ref().map(|w| w.pct)));
+        let codex_changed = self.sent_codex != Some(codex_pcts);
         let prefs_changed = self.sent_lv != Some(self.settings.liveliness)
             || self.sent_aa != Some(aa)
             || self.sent_pm != Some(pm)
@@ -530,7 +570,7 @@ impl Engine {
                 WriteKind::Poll
             } else if self.attention.pending() {
                 WriteKind::Attention
-            } else if (new_event || a_changed || n_changed || prefs_changed) && !self.stale(now) {
+            } else if (new_event || a_changed || n_changed || prefs_changed || codex_changed) && !self.stale(now) {
                 // Any ok payload refreshes the device's DATA_FRESH_MS, so
                 // while the numbers are stale only alerts and polls go out
                 // and the device can show its stale state.
@@ -556,6 +596,9 @@ impl Engine {
             p.pm = Some(pm);
             [p.k1, p.k2, p.k3] = k.map(Some);
             p.th = Some(th);
+            if let Some(c) = &codex {
+                p.set_codex(c, utc(now));
+            }
             (p, kind)
         };
 
@@ -614,9 +657,10 @@ impl Engine {
         if let Some(th) = w.payload.th {
             self.sent_th = Some(th);
         }
-        // Every data payload carries the clock; no `tf` means it's off.
+        // Every data payload carries the clock and Codex; absent means off.
         if w.kind != WriteKind::NoData {
             self.sent_tf = Some(w.payload.tf.unwrap_or(0));
+            self.sent_codex = Some((w.payload.os, w.payload.ow));
         }
     }
 
@@ -663,6 +707,8 @@ impl Engine {
                 .and_then(|a| a.backoff.until())
                 .filter(|u| *u > now),
             polling: self.active.as_ref().is_some_and(|a| self.in_flight.contains(a)),
+            codex: self.codex_shown(now).cloned(),
+            codex_error: self.codex.last_error.as_ref().map(|e| e.to_string()),
         }
     }
 }

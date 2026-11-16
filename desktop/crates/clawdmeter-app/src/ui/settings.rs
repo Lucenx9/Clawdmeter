@@ -1213,6 +1213,7 @@ impl SettingsView {
         }
         let other = chips()
             .child(choice(format!("{id}-brightness"), ButtonAction::Brightness, "Brightness".into()))
+            .child(choice(format!("{id}-page"), ButtonAction::Page, "Claude / Codex".into()))
             .child(choice(format!("{id}-nothing"), ButtonAction::None, "Nothing".into()));
         div()
             .w_full()
@@ -2085,6 +2086,7 @@ fn action_icon(a: ButtonAction) -> &'static str {
         ButtonAction::Enter => "corner-down-left",
         ButtonAction::ShiftTab | ButtonAction::Escape | ButtonAction::Chord(_) => "keyboard",
         ButtonAction::Brightness => "sun",
+        ButtonAction::Page => "arrow-left-right",
         ButtonAction::Media(MediaKey::PlayPause) => "play",
         ButtonAction::Media(MediaKey::Previous) => "skip-back",
         ButtonAction::Media(MediaKey::Next) => "skip-forward",
@@ -2102,6 +2104,7 @@ fn action_hint(b: Button, a: ButtonAction) -> &'static str {
         ButtonAction::ShiftTab => "Claude Code mode",
         ButtonAction::Space | ButtonAction::Tab | ButtonAction::Enter | ButtonAction::Escape => "Key",
         ButtonAction::Brightness => "Cycles the brightness",
+        ButtonAction::Page => "Switches the meters page",
         ButtonAction::Media(_) => "Media key",
         ButtonAction::Chord(c) if c.hold && b.can_hold() => "Shortcut, held",
         ButtonAction::Chord(_) => "Shortcut",

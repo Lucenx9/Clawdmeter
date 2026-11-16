@@ -9,6 +9,17 @@
 
 Clawdmeter shows your Claude Code usage limits on an [ESP32 development board](#supported-boards) on your desk. Clawd lives on the device. He reacts to prompts, cheers you on, and alerts you when a session needs your attention.
 
+## Codex (this fork)
+
+This fork also shows **OpenAI Codex** usage limits. While Codex CLI is signed
+in with ChatGPT (`~/.codex/auth.json`), the app reads Codex's 5-hour and
+weekly windows from `chatgpt.com/backend-api/wham/usage` every 5 minutes
+(read-only: no message is sent, the token is never refreshed) and the device
+alternates between Claude's meters and Codex's every 10 seconds. A window
+Codex's plan doesn't have is left out. Set a button to **Claude / Codex**
+(`button_secondary = page` in the config) to switch pages by hand, or
+`codex = off` to turn it off.
+
 ## Supported boards
 
 ### Flagship

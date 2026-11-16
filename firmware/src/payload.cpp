@@ -97,6 +97,14 @@ bool payload_parse(const char* json, UsageData* out, const char** err) {
     d.btn_pwr       = button_field(doc["k3"]);
     d.has_theme = theme_parse_hex(doc["th"] | "", d.theme);
 
+    // Codex page: absent keys (older app, Codex off or signed out) = no page.
+    JsonVariant os = doc["os"];
+    JsonVariant ow = doc["ow"];
+    d.codex_session_pct = os.is<int>() ? (int16_t)(os.as<int>() < 0 ? 0 : os.as<int>() > 999 ? 999 : os.as<int>()) : -1;
+    d.codex_weekly_pct  = ow.is<int>() ? (int16_t)(ow.as<int>() < 0 ? 0 : ow.as<int>() > 999 ? 999 : ow.as<int>()) : -1;
+    d.codex_session_reset_mins = doc["osr"] | -1;
+    d.codex_weekly_reset_mins  = doc["owr"] | -1;
+
     d.ok = doc["ok"] | false;
     d.valid = true;
     *out = d;

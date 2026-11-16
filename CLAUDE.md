@@ -94,13 +94,17 @@ The app writes one complete JSON object per write to RX
   Ultra, the endpoint's `five_hour: null`): `s`/`sr` stay 0/-1 for older
   firmware, and the device shows `w`/`wr` alone as its main meter.
   `{"ok":false}` means no data.
+- Codex page: `os osr ow owr` (OpenAI Codex's 5-hour and weekly % and
+  minutes to reset, each pair absent when Codex's plan lacks that window;
+  none = no Codex page). The meters alternate Claude / Codex every 10 s
+  (`UI_PAGE_MS`), or on a button set to preset `7` (`page`).
 - Attention: `b` (alert chime), `m` (ASCII message), `x` (clear).
 - Fast clock: `a` (activity 0–3), `e` + `es` (event `p`/`s`/`b` and its
   sequence), `n` (active sessions). `rp:1` marks the usage numbers as a replay
   (heartbeats and writes between polls): the rate math and reset detector skip
   them, but a new `es` in the same write still fires.
 - Device settings, on every data payload: `k1`/`k2`/`k3` (what the
-  primary, secondary and PWR buttons do: presets 0–6, keyboard shortcuts
+  primary, secondary and PWR buttons do: presets 0–7, keyboard shortcuts
   and media keys as bit fields, `button_action.h`), `lv` (liveliness 1–5), `aa`
   (attention animation seconds: 120, 30, 10, 0 = off; only his animation,
   not the alert), `pm` (pace marker on the usage bars, `pace.h`) and `th`

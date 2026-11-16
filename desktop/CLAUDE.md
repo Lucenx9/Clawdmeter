@@ -27,7 +27,11 @@ is faked behind `FlashHardware`.
   lines, `Spend limit:` lines, the overage header, reset dates with an
   optional year; fixtures in `tests/fixtures/` are real or derived from the
   CLI source), `probe` / `oauth` (usage sources), `cadence` (when to poll),
-  `backoff`, `selector` (which account is shown), `events` (tails
+  `backoff`, `codex` (OpenAI Codex usage: `chatgpt.com/backend-api/wham/usage`
+  with the token in `$CODEX_HOME/auth.json`, read-only and never refreshed;
+  windows sorted by length, polled every 5 min on its own clock in
+  `daemon.rs`, misses back off 10/20/30 min or a 429's `retry-after`, a
+  reading over an hour old isn't sent), `selector` (which account is shown), `events` (tails
   `events.log`), `attention`, `payload`, `buttons` (device button actions,
   their config spelling and `k1`–`k3` codes), `rate`, `engine` (I/O-free state
   machine: `next_write` / `mark_written`), `autostart` (systemd / XDG /
@@ -73,10 +77,12 @@ is faked behind `FlashHardware`.
   this computer via rodio, ALSA on Linux), `clock`, `liveliness` (1–5,
   default 3: the Device page's Animation silliness slider, sent as `lv`),
   `attention_anim` (`off`/`10s`/`30s`/`2m`, default `2m`, sent as `aa`
-  seconds), `pace_marker` (default off, sent as `pm`), `button_primary`
+  seconds), `pace_marker` (default off, sent as `pm`), `codex` (default on:
+  Codex's usage goes out as `os`/`osr`/`ow`/`owr` while Codex is signed in
+  with ChatGPT), `button_primary`
   (default `space`), `button_secondary` (default `shift-tab`) and
   `button_pwr` (default `brightness`): `none`, `space`, `shift-tab`, `tab`,
-  `enter`, `escape`, `brightness`, a media key (`play-pause`,
+  `enter`, `escape`, `brightness`, `page` (Claude / Codex meters), a media key (`play-pause`,
   `previous-track`, `next-track`, `volume-down`, `volume-up`, `mute`) or a
   shortcut, modifiers and a key joined by `+` with an optional `hold`
   (`ctrl+shift+m`, `super+alt+k`, `ctrl+space hold`; `tap` marks one

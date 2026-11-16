@@ -13,8 +13,15 @@ static const char* const PAIR_TEXT_HOLDING    = "keep holding...";
 
 // Card pills: session, weekly, then the spend-capped account's spending and
 // period. The short set is for panels too narrow for the long one.
-static const char* const PILL_TEXT[4]       = { "Session", "Weekly", "Spending", "Period" };
-static const char* const PILL_TEXT_SHORT[4] = { "5h", "7d", "Spend", "Period" };
+#define PILL_COUNT 4
+static const char* const PILL_TEXT[PILL_COUNT]       = { "Session", "Weekly", "Spending", "Period" };
+static const char* const PILL_TEXT_SHORT[PILL_COUNT] = { "5h", "7d", "Spend", "Period" };
+
+// The Codex page's pills (5-hour, weekly): the longest set that fits the
+// layout chosen for Claude's cards, which they never change (layout.cpp).
+static const char* const CODEX_PILL_SETS[][2] = {
+    { "Codex 5h", "Codex 7d" }, { "Cx 5h", "Cx 7d" }, { "5h", "7d" },
+};
 
 // Widest text a card's reset line shows: the weekly window's last day, the
 // spend-capped account's caption, and its period line (its widest pace word and date).

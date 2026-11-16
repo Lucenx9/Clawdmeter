@@ -438,6 +438,9 @@ static void button_run_press(ButtonSlot slot, ButtonRun* r, int32_t action, bool
     case BTN_KIND_BRIGHTNESS:
         brightness_cycle();
         break;
+    case BTN_KIND_PAGE:
+        ui_next_page();
+        break;
     default:
         break;
     }

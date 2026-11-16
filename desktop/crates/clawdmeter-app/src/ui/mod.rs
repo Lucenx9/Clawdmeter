@@ -116,6 +116,7 @@ const ASSETS: &[(&str, &[u8])] = bundled![
         "volume-2",
         "volume-x",
         "sun",
+        "arrow-left-right",
         "ban",
         "linux",
     ],

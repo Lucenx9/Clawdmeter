@@ -197,6 +197,26 @@ static void test_theme(void) {
     TEST_ASSERT_FALSE(d.has_theme);
 }
 
+static void test_codex_page(void) {
+    UsageData d;
+    TEST_ASSERT_TRUE(payload_parse("{\"s\":5,\"ok\":true}", &d, nullptr));
+    TEST_ASSERT_EQUAL_INT(-1, d.codex_session_pct);
+    TEST_ASSERT_EQUAL_INT(-1, d.codex_weekly_pct);
+    TEST_ASSERT_FALSE(usage_has_codex(&d));
+    TEST_ASSERT_TRUE(payload_parse("{\"ok\":true,\"ow\":66,\"owr\":6255}", &d, nullptr));
+    TEST_ASSERT_EQUAL_INT(-1, d.codex_session_pct);
+    TEST_ASSERT_EQUAL_INT(66, d.codex_weekly_pct);
+    TEST_ASSERT_EQUAL_INT(6255, d.codex_weekly_reset_mins);
+    TEST_ASSERT_EQUAL_INT(-1, d.codex_session_reset_mins);
+    TEST_ASSERT_TRUE(usage_has_codex(&d));
+    TEST_ASSERT_TRUE(payload_parse("{\"ok\":true,\"os\":-3,\"osr\":12,\"ow\":5000}", &d, nullptr));
+    TEST_ASSERT_EQUAL_INT(0, d.codex_session_pct);     // clamped
+    TEST_ASSERT_EQUAL_INT(12, d.codex_session_reset_mins);
+    TEST_ASSERT_EQUAL_INT(999, d.codex_weekly_pct);
+    TEST_ASSERT_TRUE(payload_parse("{\"ok\":true,\"ow\":\"x\"}", &d, nullptr));
+    TEST_ASSERT_FALSE(usage_has_codex(&d));            // not a number: no page
+}
+
 static void test_long_strings_truncate(void) {
     UsageData d;
     TEST_ASSERT_TRUE(payload_parse("{\"st\":\"abcdefghijklmnopqrstuvwxyz\"}", &d, nullptr));
@@ -216,6 +236,7 @@ int main(void) {
     RUN_TEST(test_pace_marker);
     RUN_TEST(test_button_actions);
     RUN_TEST(test_theme);
+    RUN_TEST(test_codex_page);
     RUN_TEST(test_long_strings_truncate);
     return UNITY_END();
 }

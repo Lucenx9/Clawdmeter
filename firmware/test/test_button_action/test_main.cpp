@@ -23,6 +23,8 @@ static void test_presets(void) {
     assert_key(BTN_ACT_ESCAPE, 0x29, 0x00, false);
     TEST_ASSERT_EQUAL(BTN_KIND_NONE, button_action_decode(BTN_ACT_NONE).kind);
     TEST_ASSERT_EQUAL(BTN_KIND_BRIGHTNESS, button_action_decode(BTN_ACT_BRIGHTNESS).kind);
+    TEST_ASSERT_EQUAL(BTN_KIND_PAGE, button_action_decode(BTN_ACT_PAGE).kind);
+    TEST_ASSERT_EQUAL(7, BTN_ACT_PAGE);   // the wire value: never renumbered
 }
 
 static void test_chords(void) {
@@ -51,7 +53,7 @@ static void test_consumer(void) {
 
 static void test_invalid(void) {
     const int32_t bad[] = {
-        -1, 7, 99, 0xFFFF,
+        -1, 8, 99, 0xFFFF,
         0x10000,                       // keyboard, usage 0
         0x10000 | 0x03,                // keyboard error usage
         0x10000 | 0x74,                // past F24

@@ -2,12 +2,14 @@
 //!
 //! Keys match `payload_parse()` in `firmware/src/payload.cpp`, in the order
 //! the old daemons wrote them, plus the additive fast-clock fields `a`, `e`,
-//! `es`, `n`, `rp` and the device settings `lv`, `aa`, `pm`, `k1`–`k3` and `th`
-//! (old firmware ignores unknown keys).
+//! `es`, `n`, `rp`, the device settings `lv`, `aa`, `pm`, `k1`–`k3` and `th`,
+//! and the Codex page `os`, `osr`, `ow`, `owr` (old firmware ignores unknown
+//! keys).
 
 use chrono::{DateTime, Datelike, Months, TimeZone, Utc};
 use serde::Serialize;
 
+use crate::codex::CodexReading;
 use crate::config::{ClockMode, Palette};
 use crate::usage::{SpendPeriod, UsageReading};
 
@@ -109,12 +111,25 @@ pub struct Payload {
     /// it got.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub th: Option<Palette>,
+    /// Codex's short (5-hour) window, % used. Absent: no such window, or no
+    /// Codex data; with `ow` absent too the device shows no Codex page.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub os: Option<u32>,
+    /// Minutes until `os` resets; -1 = unknown.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub osr: Option<i64>,
+    /// Codex's weekly window, % used.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ow: Option<u32>,
+    /// Minutes until `ow` resets; -1 = unknown.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub owr: Option<i64>,
 }
 
 /// Every key [`Payload`] can emit, in serialization order.
 pub const PAYLOAD_KEYS: &[&str] = &[
     "s", "sr", "w", "wr", "st", "acct", "tp", "pd", "rd", "t", "tf", "c", "ok", "b", "m", "x", "a", "e", "es", "n",
-    "rp", "lv", "aa", "pm", "k1", "k2", "k3", "th",
+    "rp", "lv", "aa", "pm", "k1", "k2", "k3", "th", "os", "osr", "ow", "owr",
 ];
 /// The fast-clock keys added in v0.4 (old firmware ignores them).
 pub const ADDITIVE_KEYS: &[&str] = &["a", "e", "es", "n", "rp"];
@@ -277,6 +292,19 @@ impl Payload {
         }
     }
 
+    /// Add Codex's windows (`os`/`osr`, `ow`/`owr`) as of `now`.
+    pub fn set_codex(&mut self, r: &CodexReading, now: DateTime<Utc>) {
+        let mins = |w: &crate::usage::Window| w.resets_at.map_or(-1, |t| minutes_until(t, now));
+        if let Some(w) = &r.session {
+            self.os = Some(w.pct);
+            self.osr = Some(mins(w));
+        }
+        if let Some(w) = &r.week {
+            self.ow = Some(w.pct);
+            self.owr = Some(mins(w));
+        }
+    }
+
     /// The "no data" payload (every account logged out).
     pub fn no_data() -> Self {
         Payload { ok: false, ..Default::default() }
@@ -287,7 +315,7 @@ impl Payload {
     pub fn aged(&self, secs: i64) -> Self {
         let mins = secs / 60;
         let mut p = self.clone();
-        for x in [&mut p.sr, &mut p.wr].into_iter().flatten() {
+        for x in [&mut p.sr, &mut p.wr, &mut p.osr, &mut p.owr].into_iter().flatten() {
             if *x > 0 {
                 *x = (*x - mins).max(0);
             }
@@ -410,6 +438,23 @@ mod tests {
         assert_eq!((pl.sr, pl.st.as_deref()), (Some(1), Some("limited")));
         assert_eq!(Payload::from_reading(&soon, at("2026-10-13T06:00:00Z")).sr, Some(0));
         assert_eq!(Payload::no_data().to_json(), r#"{"ok":false}"#);
+    }
+
+    #[test]
+    fn codex_fields() {
+        use crate::codex::CodexReading;
+        let now = at("2026-11-16T12:00:00Z");
+        let mut pl = Payload { ok: true, ..Default::default() };
+        let r = CodexReading {
+            week: Some(Window { pct: 66, resets_at: Some(at("2026-11-17T12:00:00Z")) }),
+            ..Default::default()
+        };
+        pl.set_codex(&r, now);
+        assert_eq!(pl.to_json(), r#"{"ok":true,"ow":66,"owr":1440}"#, "no short window: os/osr absent");
+        assert_eq!(pl.aged(120).owr, Some(1438));
+        let r = CodexReading { session: Some(Window { pct: 9, resets_at: None }), ..r };
+        pl.set_codex(&r, now);
+        assert_eq!((pl.os, pl.osr), (Some(9), Some(-1)));
     }
 
     // Ported from the enterprise branch of the old daemons
@@ -536,6 +581,10 @@ mod tests {
             k2: Some(chord),
             k3: Some(chord),
             th: Some(Palette::default()),
+            os: Some(100),
+            osr: Some(300),
+            ow: Some(100),
+            owr: Some(10_080),
         };
         let json = pl.to_json();
         assert!(json.len() < 500, "{} bytes: {json}", json.len());
@@ -573,6 +622,10 @@ mod tests {
             k2: Some(2),
             k3: Some(6),
             th: Some(Palette::default()),
+            os: Some(1),
+            osr: Some(2),
+            ow: Some(3),
+            owr: Some(4),
         };
         let v: serde_json::Map<String, serde_json::Value> = serde_json::from_str(&pl.to_json()).unwrap();
         // serde_json's Map is sorted without preserve_order; check membership.

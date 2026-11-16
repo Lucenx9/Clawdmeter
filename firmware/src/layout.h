@@ -51,6 +51,7 @@ struct Layout {
     bool    period_short;            // no room for its pace word: "Resets <date>" in the pace colour
     const lv_font_t* pace_font;
     const char* const* pills;        // PILL_TEXT or PILL_TEXT_SHORT (ui_text.h)
+    const char* const* codex_pills;  // the Codex page's 5-hour and weekly pills (CODEX_PILL_SETS)
 
     // Status line, centred at the bottom.
     const lv_font_t* status_font;

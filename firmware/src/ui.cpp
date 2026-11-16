@@ -200,8 +200,14 @@ static lv_color_t pct_color(float pct) {
 static bool pace_marker = false;
 static lv_obj_t* tick_session = nullptr;
 static lv_obj_t* tick_weekly  = nullptr;
-static UsageData last_data;                 // recoloured when the setting changes
+static UsageData last_data;                 // the last payload (Claude's numbers and Codex's)
+static UsageData shown_data;                // what the cards show now: recoloured when a setting changes
 static bool have_last_data = false;
+
+// ---- Pages: 0 = Claude, 1 = Codex (only while the payload carries it).
+static int      page = 0;
+static uint32_t page_since = 0;
+static void render_page(void);
 
 static lv_color_t bar_color(float used_pct, int reset_mins, int window_mins) {
     if (pace_marker) {
@@ -657,15 +663,15 @@ static void apply_period_colors(const UsageData* data) {
 void ui_set_pace_marker(bool on) {
     if (on == pace_marker) return;
     pace_marker = on;
-    if (have_last_data) apply_bar_colors(&last_data);
+    if (have_last_data) apply_bar_colors(&shown_data);
 }
 
 void ui_apply_theme(void) {
     for (int i = 0; i < n_themed; i++) paint(themed[i]);
     apply_pair_text();   // its last line follows the hold state
     if (have_last_data) {
-        apply_bar_colors(&last_data);
-        if (last_data.enterprise) apply_period_colors(&last_data);
+        apply_bar_colors(&shown_data);
+        if (shown_data.enterprise) apply_period_colors(&shown_data);
     }
 }
 
@@ -691,6 +697,60 @@ void ui_update(const UsageData* data) {
         apply_title_font();
     }
 
+    render_page();
+}
+
+// The Codex page as the cards' own data: both windows in the two cards, or a
+// lone centred card (like an account with no 5-hour limit) when Codex has
+// only one of them.
+static UsageData codex_view(const UsageData* d, const char** pills) {
+    UsageData v = *d;
+    v.enterprise = false;
+    const bool has_s = d->codex_session_pct >= 0, has_w = d->codex_weekly_pct >= 0;
+    pills[0] = L.codex_pills[0];
+    pills[1] = L.codex_pills[1];
+    v.weekly_only = !(has_s && has_w);
+    if (has_s && has_w) {
+        v.session_pct = d->codex_session_pct;
+        v.session_reset_mins = d->codex_session_reset_mins;
+        v.weekly_pct = d->codex_weekly_pct;
+        v.weekly_reset_mins = d->codex_weekly_reset_mins;
+    } else if (has_w) {
+        v.session_pct = v.weekly_pct = d->codex_weekly_pct;
+        v.session_reset_mins = v.weekly_reset_mins = d->codex_weekly_reset_mins;
+    } else {
+        // Only the short window: the lone card is labelled as it.
+        v.session_pct = v.weekly_pct = d->codex_session_pct;
+        v.session_reset_mins = v.weekly_reset_mins = d->codex_session_reset_mins;
+        pills[1] = L.codex_pills[0];
+    }
+    return v;
+}
+
+static void render_meters(const UsageData* data, const char* const* pills);
+
+// Draw the current page from the last payload.
+static void render_page(void) {
+    if (!have_last_data) return;
+    if (page == 1 && usage_has_codex(&last_data)) {
+        const char* pills[PILL_COUNT];
+        for (int i = 0; i < PILL_COUNT; i++) pills[i] = L.pills[i];
+        shown_data = codex_view(&last_data, pills);
+        render_meters(&shown_data, pills);
+    } else {
+        page = 0;
+        shown_data = last_data;
+        render_meters(&shown_data, L.pills);
+    }
+}
+
+void ui_next_page(void) {
+    page_since = lv_tick_get();
+    page = (page == 0 && have_last_data && usage_has_codex(&last_data)) ? 1 : 0;
+    render_page();
+}
+
+static void render_meters(const UsageData* data, const char* const* pills) {
     int s_pct = (int)(data->session_pct + 0.5f);
 
     // No 5-hour limit: the one card left sits in the middle of the space the
@@ -702,7 +762,7 @@ void ui_update(const UsageData* data) {
     if (data->enterprise) {
         // Spending box: big number-only label + small "%" symbol + desc + pace
         lv_obj_set_style_text_font(lbl_session_pct, L.ent_pct_font, 0);
-        lv_label_set_text(lbl_session_label, L.pills[2]);
+        lv_label_set_text(lbl_session_label, pills[2]);
         lv_obj_add_flag(lbl_session_reset, LV_OBJ_FLAG_HIDDEN);
         lv_obj_clear_flag(lbl_session_pct_sym, LV_OBJ_FLAG_HIDDEN);
         lv_obj_clear_flag(lbl_spending_desc,   LV_OBJ_FLAG_HIDDEN);
@@ -712,7 +772,7 @@ void ui_update(const UsageData* data) {
         // No 5-hour limit (verified Ultra): the week moves up into the first
         // card and the second card goes away.
         lv_obj_set_style_text_font(lbl_session_pct, L.pct_font, 0);
-        lv_label_set_text(lbl_session_label, L.pills[data->weekly_only ? 1 : 0]);
+        lv_label_set_text(lbl_session_label, pills[data->weekly_only ? 1 : 0]);
         lv_obj_clear_flag(lbl_session_reset, LV_OBJ_FLAG_HIDDEN);
         lv_obj_add_flag(lbl_session_pct_sym, LV_OBJ_FLAG_HIDDEN);
         lv_obj_add_flag(lbl_spending_desc,   LV_OBJ_FLAG_HIDDEN);
@@ -739,14 +799,14 @@ void ui_update(const UsageData* data) {
 
     if (data->enterprise) {
         // Period box: time % + dynamic pace color + "Resets <date>" label
-        lv_label_set_text(lbl_weekly_label, L.pills[3]);
+        lv_label_set_text(lbl_weekly_label, pills[3]);
         lv_label_set_text_fmt(lbl_weekly_pct, "%d%%", data->time_pct);
         lv_bar_set_value(bar_weekly, data->time_pct, LV_ANIM_ON);
         lv_obj_set_style_text_font(lbl_weekly_reset, L.period_font, 0);
         apply_period_colors(data);
     } else {
         int w_pct = (int)(data->weekly_pct + 0.5f);
-        lv_label_set_text(lbl_weekly_label, L.pills[1]);
+        lv_label_set_text(lbl_weekly_label, pills[1]);
         lv_label_set_text_fmt(lbl_weekly_pct, "%d%%", w_pct);
         lv_bar_set_value(bar_weekly, w_pct, LV_ANIM_ON);
         format_reset_time(data->weekly_reset_mins, buf, sizeof(buf), "---");
@@ -790,6 +850,11 @@ bool ui_meters_live(void) { return view_state == 2; }
 
 void ui_tick_anim(void) {
     update_view_state();
+    // The pages turn by themselves while the meters are live.
+    if (have_last_data && usage_has_codex(&last_data) && view_state == 2
+        && lv_tick_get() - page_since >= UI_PAGE_MS) {
+        ui_next_page();
+    }
     if (pair_hint == PAIR_HINT_CLEARED && lv_tick_get() - pair_hint_since >= PAIR_CLEARED_SHOW_MS)
         ui_set_pair_hint(PAIR_HINT_NORMAL);
     const bool still = minimal_mode();   // minimal: nothing moves but the numbers
