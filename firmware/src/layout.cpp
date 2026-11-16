@@ -162,9 +162,9 @@ static const Design COMPACT = {
 // 240x240 (LCD-1.54): type two steps down, cards about half as tall.
 static const Design SMALL = {
     .chrome = &CHROME_SMALL, .top = 44, .margin = 8, .card_h = 74, .gap = 6,
-    .bar_y = 30, .bar_h = 12, .reset_y = 46,
+    .bar_y = 34, .bar_h = 10, .reset_y = 46,
     .pad_x = 10, .pad_y = 6, .pill_pad_x = 8, .pill_pad_y = 2,
-    .pct = &font_styrene_24, .ent_pct = &font_tiempos_34, .pill = &font_styrene_14,
+    .pct = &font_styrene_28, .ent_pct = &font_tiempos_34, .pill = &font_styrene_14,
     .reset = &font_styrene_14, .pace = &font_styrene_12,
     .pair_y = { 12, 56, 80, 112 },
 };
@@ -253,10 +253,13 @@ static void fit_title(Layout& L, const Chrome& c) {
     const int16_t left = L.title_cx - (L.logo_x + logo_w(L));
     const int16_t right = L.batt_x - L.title_cx;
     const int16_t room = 2 * ((left < right ? left : right) - TITLE_GAP);
-    for (int fmt = 0; fmt < 2; fmt++) {
+    for (int fmt = 0; fmt < 3; fmt++) {
         L.title_font[fmt] = nullptr;
         for (int i = c.title_font; i < TITLE_FONT_COUNT; i++) {
-            if (widest_clock(TITLE_FONTS[i], fmt == 1) <= room) {
+            static const char* const SERVICES[] = { "Claude", "Codex" };
+            const int width = fmt == 2 ? widest(TITLE_FONTS[i], SERVICES, 2)
+                                       : widest_clock(TITLE_FONTS[i], fmt == 1);
+            if (width <= room) {
                 L.title_font[fmt] = TITLE_FONTS[i];
                 break;
             }
@@ -581,4 +584,45 @@ int16_t layout_lone_card_x(const Layout& L) {
 
 int16_t layout_lone_card_y(const Layout& L) {
     return L.card[0].y + (stack_bottom(L) - L.card[0].y - L.card[0].h) / 2;
+}
+
+SingleCardLayout layout_codex_single(const Layout& L) {
+    SingleCardLayout s = { { layout_lone_card_x(L), layout_lone_card_y(L), L.card[0].w, L.card[0].h },
+                          L.codex_pct_font, 1, 0, L.bar_y, L.reset_y, false };
+    const int16_t width = L.card[1].x + L.card[1].w - L.card[0].x;
+    const int16_t height = stack_bottom(L) - L.card[0].y;
+    const int inner_w = width - 2 * L.pad_x, inner_h = height - 2 * L.pad_y;
+    const int label_h = line_h(L.codex_pill_font) + 2 * L.pill_pad_y;
+    const int reset_h = line_h(L.codex_reset_font);
+    const int gap = L.small_icons ? 6 : 12;
+    for (const lv_font_t* font : GEIST_SIZES) {
+        if (line_h(font) < line_h(L.codex_pct_font)) break;
+        const int pct_h = line_h(font);
+        const int block_h = label_h + pct_h + L.bar_h + reset_h + 3 * gap;
+        if (layout_text_width(font, "999%") > inner_w || block_h > inner_h) continue;
+        s.rect = { L.card[0].x, L.card[0].y, width, height };
+        s.pct_font = font;
+        s.pill_y = (inner_h - block_h) / 2;
+        s.pct_y = s.pill_y + label_h + gap;
+        s.bar_y = s.pct_y + pct_h + gap;
+        s.reset_y = s.bar_y + L.bar_h + gap;
+        s.expanded = true;
+        break;
+    }
+    return s;
+}
+
+void layout_format_stale_age(const Layout& L, uint32_t age_ms, char* out, size_t cap) {
+    if (!cap) return;
+    const uint32_t minutes = age_ms / 60000;
+    if (!minutes) {
+        snprintf(out, cap, "No fresh data");
+        if (layout_text_width(L.status_font, out) > L.status_w) snprintf(out, cap, "No data");
+    } else {
+        const unsigned long value = minutes >= 1440 ? minutes / 1440 : minutes >= 60 ? minutes / 60 : minutes;
+        const char unit = minutes >= 1440 ? 'd' : minutes >= 60 ? 'h' : 'm';
+        snprintf(out, cap, "Updated %lu%c ago", value, unit);
+        if (layout_text_width(L.status_font, out) > L.status_w) snprintf(out, cap, "Old %lu%c", value, unit);
+    }
+    if (layout_text_width(L.status_font, out) > L.status_w) snprintf(out, cap, "Stale");
 }

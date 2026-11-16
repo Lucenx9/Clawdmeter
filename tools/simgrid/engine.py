@@ -151,8 +151,15 @@ class Sim:
             self.request("quit")
         except Exception:
             pass
-        self.proc.wait(timeout=5)
-        self.log.close()
+        try:
+            self.proc.wait(timeout=5)
+        finally:
+            try:
+                self.io.close()
+            except OSError:
+                pass
+            self.sock.close()
+            self.log.close()
 
 
 class Recorder:

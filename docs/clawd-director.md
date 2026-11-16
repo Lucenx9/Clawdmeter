@@ -75,12 +75,16 @@ Continuity rules, as the code enforces them:
   minimal mode uses fixed status text instead of rotating verbs.
 - Stale data keeps the one-Clawd rule. When the link is up but no fresh usage
   has landed for `DATA_FRESH_MS` (90 s), or the daemon sent `{"ok":false}`,
-  the meters stay where they are at 40 % opacity (LVGL `opa`, which scales the
-  draws and needs no layer buffer, so it's free on the C6) and the status line
-  alternates "Stale…" (or "No data…" before the first payload) with
-  "Listening…". On a 1-bit panel (`BoardCaps.mono_panel`, the e-paper) faded
-  text prints broken, so the meters keep full strength and the status line
-  holds "Stale" / "No data" without alternating. The corner Clawd stays in his
+  the bars fade to 40 % opacity while the values and reset times stay readable.
+  The status line holds "Updated 2m ago" with the age of the last valid
+  payload, shortened to "Old 2m" on narrow panels. An immediately rejected
+  reading says "No fresh data" rather than "Updated 0m ago"; hours and days
+  replace large minute counts. It updates once a minute;
+  alerts still take priority. This measures the last received payload,
+  including heartbeats, rather than the age of the host's original poll.
+  Before any data arrives it says "No data". On a 1-bit panel
+  (`BoardCaps.mono_panel`, the e-paper) the bars keep full strength too.
+  The corner Clawd stays in his
   seat. Shows and the screensaver need live meters, so they wait.
 
 ## Beats
@@ -243,6 +247,15 @@ creature on screen (`test_director` counts the Codex cloud too):
 
 Minimal mode swaps the page and the still sprites with no walk or hop.
 
+A single Codex limit uses the rectangle occupied by both cards, with its
+label, percentage, bar and reset on separate rows. The percentage grows up
+to 48 px in Geist Mono, fitted against the real font metrics. On a short
+strip without enough height it keeps the compact centred card. Two limits
+restore the two cards. With the clock off, the header names the displayed
+service, "Claude" or "Codex", in a font fitted between the mascot and battery.
+On the small design, Claude's percentages are 28 px and the reset value is
+right-aligned, separate from its dimmer "Reset" caption.
+
 **The screensaver's faces take turns** (`screensaver_rise`): while the app
 sends Codex numbers, every other rise is Codex's face instead of Clawd's
 (`face_set_skin`): the same field, motion, blinks and glances, in the Codex
@@ -257,7 +270,10 @@ out of the way first, as for any alert), and the cloud keeps hopping and
 leaning its prompt at you for the attention animation's time; the page stays
 until a tap, a clear or the timeout, then runs its usual 10 s. Clawd is never
 fetched for it. If Claude asks too, Clawd takes over: the cloud stops, the
-page turns back and he comes to fetch you. **Codex's events** (`oe`): on the
+page turns back and he comes to fetch you. A later Codex alert replaces a
+Claude alert too: Clawd finishes leaving before the Codex page appears.
+Without Codex numbers, Clawd carries either kind of alert on Claude's page.
+**Codex's events** (`oe`): on the
 Codex page a prompt makes the cloud think (three dots) and a stop makes it
 hop; a prompt also wakes the screensaver.
 
@@ -367,8 +383,10 @@ simulator.
 
 The app also expires uncleared alerts after 2 minutes; Hooks test alerts
 expire after 30 seconds. If the alert was sent, app expiry queues a clear
-for the device. These app limits are separate from the device's 2-minute
-attention timer (`SIM_FAST` compresses that device timer to 20 seconds).
+for the device. If a replacement is cleared or expires before it is sent,
+the app still clears any older alert left on the device. These app limits
+are separate from the device's 2-minute attention timer (`SIM_FAST`
+compresses that device timer to 20 seconds).
 
 ## Minimal mode
 

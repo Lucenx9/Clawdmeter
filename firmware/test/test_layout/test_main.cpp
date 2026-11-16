@@ -4,6 +4,7 @@
 // exact layout they were tuned with.
 #include <unity.h>
 #include <stdio.h>
+#include <string.h>
 #include <math.h>
 #include <initializer_list>
 #include "../../src/layout.cpp"
@@ -121,6 +122,8 @@ static void check_panel(const Panel& p) {
     check_apart("corner Clawd vs battery", logo_art(), battery());
     for (title_fmt = 0; title_fmt < 2; title_fmt++)
         if (L.title_font[title_fmt]) each_title(title_fmt == 1, check_title);
+    title_fmt = 2;
+    if (L.title_font[2]) { check_title("Claude"); check_title("Codex"); }
     if (p.w >= 200 && !L.title_font[0]) fail("no room for the title", { 0, 0, p.w, 0 });
 
     // Cards: on the glass, apart, below the header, above the status line.
@@ -128,7 +131,7 @@ static void check_panel(const Panel& p) {
         check_on_glass("card", card(i), 8);
         check_apart("card vs corner Clawd", card(i), logo_art());
         check_apart("card vs battery", card(i), battery());
-        for (title_fmt = 0; title_fmt < 2; title_fmt++) {
+        for (title_fmt = 0; title_fmt < 3; title_fmt++) {
             const lv_font_t* f = L.title_font[title_fmt];
             if (!f) continue;
             check_apart("card vs title", card(i), { 0, L.title_y[title_fmt], p.w, ink_h(f) });
@@ -142,7 +145,7 @@ static void check_panel(const Panel& p) {
     check_on_glass("lone card", lone, 8);
     check_apart("lone card vs corner Clawd", lone, logo_art());
     check_apart("lone card vs battery", lone, battery());
-    for (title_fmt = 0; title_fmt < 2; title_fmt++) {
+    for (title_fmt = 0; title_fmt < 3; title_fmt++) {
         const lv_font_t* f = L.title_font[title_fmt];
         if (f) check_apart("lone card vs title", lone, { 0, L.title_y[title_fmt], p.w, ink_h(f) });
     }
@@ -170,6 +173,11 @@ static void check_panel(const Panel& p) {
         fail("spending vs pill", card(0));
     for (const char* s : RESET_TEXT_WIDEST)
         if (text_w(L.reset_font, s) > inner_w) fail(s, card(0));
+    for (const char* s : { "23h 59m", "6d 23h" }) {
+        const int caption = text_w(L.pace_font, "Reset") + 6;
+        if (caption + text_w(L.reset_font, s) > inner_w) fail("reset caption vs value", card(0));
+        if (caption + text_w(L.codex_reset_font, s) > inner_w) fail("Codex reset caption vs value", card(0));
+    }
     if (text_w(L.period_font, L.period_short ? PERIOD_TEXT_SHORT_WIDEST : PERIOD_TEXT_WIDEST) > inner_w)
         fail("period line", card(1));
     if (L.card[0].w >= 224 && L.period_short) fail("period line without its pace word", card(1));
@@ -269,8 +277,9 @@ static void test_small_240x240(void) {
     TEST_ASSERT_EQUAL_INT16(8, L.card[0].x);    TEST_ASSERT_EQUAL_INT16(224, L.card[0].w);
     TEST_ASSERT_EQUAL_INT16(44, L.card[0].y);   TEST_ASSERT_EQUAL_INT16(74, L.card[0].h);
     TEST_ASSERT_EQUAL_INT16(124, L.card[1].y);
-    TEST_ASSERT_EQUAL_INT16(30, L.bar_y);       TEST_ASSERT_EQUAL_INT16(12, L.bar_h);
+    TEST_ASSERT_EQUAL_INT16(34, L.bar_y);       TEST_ASSERT_EQUAL_INT16(10, L.bar_h);
     TEST_ASSERT_EQUAL_INT16(46, L.reset_y);
+    TEST_ASSERT_EQUAL_PTR(&font_styrene_28, L.pct_font);
     TEST_ASSERT_TRUE(L.small_icons);
     TEST_ASSERT_EQUAL_PTR(&font_tiempos_34, L.title_font[0]);
     TEST_ASSERT_EQUAL_PTR(&font_styrene_24, L.title_font[1]);
@@ -302,7 +311,59 @@ static void test_row_320x172(void) {
     TEST_ASSERT_EQUAL_PTR(&font_styrene_12, L.period_font);
 }
 
+static void test_single_codex_card_uses_available_space(void) {
+    for (const Panel& p : PANELS) {
+        P = &p;
+        L = layout_compute({p.w, p.h, p.round});
+        const SingleCardLayout s = layout_codex_single(L);
+        const Box box = {s.rect.x, s.rect.y, s.rect.w, s.rect.h};
+        check_on_glass("single Codex card", box, 8);
+        check_apart("single Codex card vs mascot", box, logo_art());
+        check_apart("single Codex card vs battery", box, battery());
+        const int width = s.rect.w - 2 * L.pad_x;
+        const int height = s.rect.h - 2 * L.pad_y;
+        if (!s.expanded) continue;
+        if (text_w(s.pct_font, "999%") > width) fail("single Codex percentage", box);
+        for (const char* pill : CODEX_PILL_SETS[0])
+            if (text_w(L.codex_pill_font, pill) + 2 * L.pill_pad_x > width)
+                fail("single Codex label", box);
+        if (s.pill_y + line_h(L.codex_pill_font) + 2 * L.pill_pad_y > s.pct_y)
+            fail("single Codex label vs number", box);
+        if (s.pct_y + line_h(s.pct_font) > s.bar_y) fail("single Codex number vs bar", box);
+        if (s.bar_y + L.bar_h > s.reset_y) fail("single Codex bar vs reset", box);
+        if (s.reset_y + line_h(L.codex_reset_font) > height) fail("single Codex reset vs bottom", box);
+    }
+    L = layout_compute({240, 240, false});
+    const SingleCardLayout s = layout_codex_single(L);
+    TEST_ASSERT_TRUE(s.expanded);
+    TEST_ASSERT_EQUAL_INT16(154, s.rect.h);
+    TEST_ASSERT_EQUAL_PTR(&font_geist_mono_48, s.pct_font);
+}
+
 // Kerned, per-glyph-rounded widths, as lv_font_get_glyph_width sums them.
+static void test_stale_age_is_explicit_and_fits_every_panel(void) {
+    char text[48];
+    for (const Panel& p : PANELS) {
+        P = &p;
+        L = layout_compute({p.w, p.h, p.round});
+        for (uint32_t age : {0u, 59000u, 90000u, 3600000u, 86400000u, UINT32_MAX}) {
+            layout_format_stale_age(L, age, text, sizeof(text));
+            if (text_w(L.status_font, text) > L.status_w) fail("stale age does not fit", status_box(text));
+            check_on_glass("stale age", status_box(text));
+            TEST_ASSERT_TRUE(strcmp(text, "Updated 0m ago") != 0);
+        }
+    }
+    L = layout_compute({240, 240, false});
+    layout_format_stale_age(L, 0, text, sizeof(text));
+    TEST_ASSERT_EQUAL_STRING("No fresh data", text);
+    layout_format_stale_age(L, 90000, text, sizeof(text));
+    TEST_ASSERT_EQUAL_STRING("Updated 1m ago", text);
+    layout_format_stale_age(L, 3600000, text, sizeof(text));
+    TEST_ASSERT_EQUAL_STRING("Updated 1h ago", text);
+    layout_format_stale_age(L, 86400000, text, sizeof(text));
+    TEST_ASSERT_EQUAL_STRING("Updated 1d ago", text);
+}
+
 static void test_text_width(void) {
     TEST_ASSERT_EQUAL_INT32(371, layout_text_width(&font_styrene_28, "for 3 seconds, then release"));
     TEST_ASSERT_EQUAL_INT32(0, layout_text_width(&font_styrene_28, ""));
@@ -327,6 +388,8 @@ int main(int, char**) {
     RUN_TEST(test_large_410x502);
     RUN_TEST(test_small_240x240);
     RUN_TEST(test_row_320x172);
+    RUN_TEST(test_single_codex_card_uses_available_space);
+    RUN_TEST(test_stale_age_is_explicit_and_fits_every_panel);
     RUN_TEST(test_text_width);
     RUN_TEST(print_layouts);
     return UNITY_END();

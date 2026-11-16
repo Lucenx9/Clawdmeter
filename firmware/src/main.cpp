@@ -289,6 +289,13 @@ void setup() {
     const int H = board_caps().height;
 
     lv_init();
+#if defined(BOARD_HAS_PSRAM) && LV_USE_STDLIB_MALLOC == LV_STDLIB_BUILTIN
+    // Large cards, gradient maps and glyph caches share LVGL's 64 KB heap.
+    // Leave draw tasks room even after the cache has fragmented that pool.
+    // LVGL owns the added pool for the lifetime of this process.
+    static void* lv_extra_pool = heap_caps_malloc(32 * 1024, MALLOC_CAP_SPIRAM);
+    if (lv_extra_pool) lv_mem_add_pool(lv_extra_pool, 32 * 1024);
+#endif
     lv_tick_set_cb(my_tick);
 
     buf1 = (uint16_t*)heap_caps_malloc(W * BUF_LINES * 2, LV_BUF_CAPS);

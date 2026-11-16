@@ -81,6 +81,9 @@ class RunTest(unittest.TestCase):
             return e.now
         finally:
             e.close()
+            for sim in e.sims:
+                self.assertTrue(sim.io.closed)
+                self.assertEqual(sim.sock.fileno(), -1)
 
     def test_same_script_same_pixels(self):
         with tempfile.TemporaryDirectory() as a, tempfile.TemporaryDirectory() as b:
@@ -89,6 +92,39 @@ class RunTest(unittest.TestCase):
             for name in ("a.png", "b.png"):
                 with open(os.path.join(a, name), "rb") as fa, open(os.path.join(b, name), "rb") as fb:
                     self.assertEqual(fa.read(), fb.read(), name)
+
+    def test_codex_pace_tracks_the_actual_window(self):
+        with tempfile.TemporaryDirectory() as out:
+            e = eng.Engine("154", log_dir=out)
+            try:
+                e.liveliness(1)
+                e.payload(os=31, osr=150, pm=1)
+                e.step(1500)
+                e.payload(m="Codex needs you!", ax=1)
+                e.step(4000)
+                windows = [
+                    dict(os=31, osr=150, ow=None, owr=None),
+                    dict(os=None, osr=None, ow=31, owr=5040),
+                    dict(os=31, osr=150, ow=10, owr=5040),
+                ]
+                for window in windows:
+                    with self.subTest(window=window):
+                        e.payload(**window)
+                        e.step(500)
+                        image = e.frame("154")
+                        # Locate the first bar by its violet fill; 31% is
+                        # longer than the second bar's 10% in the dual view.
+                        rows = {y: sum(b > r + 15 and b > g + 15
+                                       for r, g, b in (image.getpixel((x, y)) for x in range(18, 222)))
+                                for y in range(60, 198)}
+                        y = max(rows, key=rows.get)
+                        self.assertGreater(rows[y], 40, "the Codex fill must be visible")
+                        marker = [x for x in range(18, 222) if min(image.getpixel((x, y))) > 160]
+                        self.assertTrue(marker, "the pace marker must be visible")
+                        self.assertAlmostEqual(sum(marker) / len(marker), 120, delta=2,
+                                               msg="half a window must put the marker at the centre")
+            finally:
+                e.close()
 
 
 if __name__ == "__main__":

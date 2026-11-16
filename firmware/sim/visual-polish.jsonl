@@ -1,0 +1,9 @@
+# Visual regression: service titles, one/two Codex windows, stale recovery.
+# SIM_SCENARIO=sim/visual-polish.jsonl .pio/build/sim/program
+{"name":"Claude, clock off","hold_ms":4000,"s":76,"sr":128,"w":82,"wr":4740,"ok":true,"lv":1}
+{"name":"Codex weekly card","hold_ms":6000,"s":76,"sr":128,"w":82,"wr":4740,"ow":66,"owr":1440,"ok":true,"lv":1,"ax":1,"m":"Codex needs you!"}
+{"name":"Codex two windows","hold_ms":3000,"s":76,"sr":128,"w":82,"wr":4740,"os":31,"osr":128,"ow":66,"owr":1440,"ok":true,"lv":1,"x":1}
+{"name":"Codex short card","hold_ms":3000,"s":76,"sr":128,"w":82,"wr":4740,"os":31,"osr":128,"ok":true,"lv":1}
+{"name":"Claude reset unknown","hold_ms":5000,"s":0,"sr":-1,"w":82,"wr":-1,"ok":true,"lv":1}
+{"name":"No fresh data","hold_ms":95000,"ok":false}
+{"name":"Claude recovered","hold_ms":6000,"s":78,"sr":120,"w":83,"wr":4730,"ok":true,"lv":1}

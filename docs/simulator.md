@@ -159,3 +159,16 @@ For a round panel, build the square size and run with `SIM_CIRCLE=1`
 The simulator checks shared layout and behavior. It cannot validate a
 physical panel's column offsets, bus timing, touch mapping, or rotation.
 Check those on the target board before merging a port or display-driver change.
+
+### Meter typography and freshness
+
+`sim/visual-polish.jsonl` exercises the service title with the clock off,
+Codex's expanded single card, restoration of both cards, unknown reset
+values, stale data and recovery. Run it with:
+
+```bash
+SIM_SCENARIO=sim/visual-polish.jsonl .pio/build/sim/program
+```
+
+The stale footer describes the age of the last received valid payload,
+including replays. It does not claim to measure the host's original poll.

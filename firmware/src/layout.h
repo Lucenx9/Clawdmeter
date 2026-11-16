@@ -1,5 +1,6 @@
 #pragma once
 #include <stdint.h>
+#include <stddef.h>
 #include <lvgl.h>
 
 // Where everything on the meters goes, worked out from the panel's shape
@@ -25,7 +26,7 @@ struct Layout {
     int16_t w, h;
 
     // Header: the corner Clawd's slot on the left, the battery on the
-    // right, the clock (or "Usage") between them.
+    // right, the clock (or service name) between them.
     bool    small_icons;             // 40 px Clawd slot + 24 px battery (else 80 / 48)
     int16_t logo_x, logo_y;          // Clawd slot, top-left
     int16_t batt_x, batt_y;          // battery icon, top-left
@@ -34,8 +35,9 @@ struct Layout {
     // and the battery, and its top edge (a smaller font sits on the same
     // centre line): [0] "Usage" and the 24-hour clock, [1] the 12-hour
     // clock. NULL: no room, the title stays hidden.
-    const lv_font_t* title_font[2];
-    int16_t title_y[2];
+    // [2] the service name when the clock is off.
+    const lv_font_t* title_font[3];
+    int16_t title_y[3];
 
     // The two usage cards, stacked (side by side on a landscape strip).
     LayoutRect card[2];
@@ -76,6 +78,21 @@ Layout layout_compute(const LayoutShape& shape);
 // limit, acct "week"): centred on the space the two cards take.
 int16_t layout_lone_card_x(const Layout& L);
 int16_t layout_lone_card_y(const Layout& L);
+
+// A single Codex limit uses the space of both cards when its label,
+// percentage, bar and reset can form separate rows. Short strips keep the
+// compact card with its label beside the percentage.
+struct SingleCardLayout {
+    LayoutRect rect;
+    const lv_font_t* pct_font;
+    int16_t pill_y, pct_y, bar_y, reset_y;
+    bool expanded;
+};
+SingleCardLayout layout_codex_single(const Layout& L);
+
+// Explicit stale status, fitted to the available width. Age is since the
+// last valid payload, not the original host poll.
+void layout_format_stale_age(const Layout& L, uint32_t age_ms, char* out, size_t cap);
 
 // Corner icon sizes the layout plans with (ui.cpp checks them against the art).
 #define LAYOUT_LOGO_SLOT        80   // logo.h LOGO_HEIGHT

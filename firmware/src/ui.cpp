@@ -104,7 +104,7 @@ static lv_obj_t* logo_img;
 static lv_image_dsc_t battery_dscs[6];  // empty, low, medium, full, charging, plug-zap (no battery)
 
 // ---- Live-data freshness → which usage sub-view to show ----
-// Live meters when data is flowing; the same meters dimmed when the host is
+// Live meters when data is flowing; dimmed bars with readable text when the host is
 // connected but no usage update landed within DATA_FRESH_MS (stale: the last
 // numbers stay, visibly not live, and the status line says so); the pairing
 // hint when BLE is down. The corner Clawd stays in his seat in all three:
@@ -307,11 +307,11 @@ static void format_reset_time(int mins, char* buf, size_t len, const char* none)
     if (mins < 0) {
         snprintf(buf, len, "%s", none);
     } else if (mins < 60) {
-        snprintf(buf, len, "Resets in %dm", mins);
+        snprintf(buf, len, "%dm", mins);
     } else if (mins < 1440) {
-        snprintf(buf, len, "Resets in %dh %dm", mins / 60, mins % 60);
+        snprintf(buf, len, "%dh %02dm", mins / 60, mins % 60);
     } else {
-        snprintf(buf, len, "Resets in %dd %dh", mins / 1440, (mins % 1440) / 60);
+        snprintf(buf, len, "%dd %dh", mins / 1440, (mins % 1440) / 60);
     }
 }
 
@@ -422,10 +422,46 @@ static lv_obj_t* make_usage_panel(lv_obj_t* parent, const LayoutRect& r, const c
     *out_reset = lv_label_create(panel);
     lv_label_set_text(*out_reset, "---");
     lv_obj_set_style_text_font(*out_reset, L.reset_font, 0);
-    themed_text(*out_reset, TH_DIM);
+    themed_text(*out_reset, TH_TEXT);
     lv_obj_set_pos(*out_reset, 0, L.reset_y);
 
     return panel;
+}
+
+// Drawing the two static captions avoids two extra label widgets in LVGL's
+// fixed 64 KB heap, which also holds temporary draw tasks and glyph caches.
+static void draw_reset_caption(lv_event_t* e) {
+    lv_obj_t* value = (lv_obj_t*)lv_event_get_user_data(e);
+    if (!have_last_data || shown_data.enterprise || lv_obj_has_flag(value, LV_OBJ_FLAG_HIDDEN)) return;
+    const int mins = value == lbl_session_reset ? shown_data.session_reset_mins : shown_data.weekly_reset_mins;
+    if (mins < 0) return;
+    lv_obj_t* panel = (lv_obj_t*)lv_event_get_target(e);
+    lv_area_t area;
+    lv_obj_get_coords(panel, &area);
+    area.x1 += L.pad_x;
+    area.y1 += L.pad_y + lv_obj_get_y(value);
+    const lv_font_t* value_font = lv_obj_get_style_text_font(value, LV_PART_MAIN);
+    area.y1 += lv_font_get_line_height(value_font) - value_font->base_line
+             - lv_font_get_line_height(L.pace_font) + L.pace_font->base_line;
+    area.x2 = area.x1 + layout_text_width(L.pace_font, "Reset") - 1;
+    area.y2 = area.y1 + lv_font_get_line_height(L.pace_font) - 1;
+    lv_draw_label_dsc_t text;
+    lv_draw_label_dsc_init(&text);
+    text.font = L.pace_font;
+    text.color = COL_DIM;
+    text.text = "Reset";
+    lv_draw_label(lv_event_get_layer(e), &text, &area);
+}
+
+static void render_reset(lv_obj_t* value, int mins, const char* unknown,
+                         int width, int y) {
+    char buf[40];
+    format_reset_time(mins, buf, sizeof(buf), unknown);
+    lv_label_set_text(value, buf);
+    lv_obj_set_y(value, y);
+    lv_obj_set_x(value, mins < 0 ? 0 : width - layout_text_width(
+        lv_obj_get_style_text_font(value, LV_PART_MAIN), buf));
+    lv_obj_invalidate(lv_obj_get_parent(value));
 }
 
 // Pairing hint — shown when disconnected so the screen isn't empty and the
@@ -491,7 +527,7 @@ void ui_set_pair_hint(PairHint hint) {
 // The title's font follows the clock format (a 12-hour clock may need a
 // smaller one); hidden where the header has no room for it at all.
 static void apply_title_font(void) {
-    const int fmt = clock_base_epoch > 0 && clock_fmt == 12 ? 1 : 0;
+    const int fmt = clock_base_epoch <= 0 ? 2 : clock_fmt == 12 ? 1 : 0;
     const lv_font_t* f = L.title_font[fmt];
     if (!f) {
         lv_obj_add_flag(lbl_title, LV_OBJ_FLAG_HIDDEN);
@@ -512,7 +548,7 @@ static void init_usage_screen(lv_obj_t* scr) {
     lv_obj_clear_flag(usage_container, LV_OBJ_FLAG_SCROLLABLE);
 
     lbl_title = lv_label_create(usage_container);
-    lv_label_set_text(lbl_title, "Usage");
+    lv_label_set_text(lbl_title, "Claude");
     themed_text(lbl_title, TH_TEXT);
     apply_title_font();
 
@@ -530,6 +566,7 @@ static void init_usage_screen(lv_obj_t* scr) {
     panel_session = make_usage_panel(usage_group, L.card[0], L.pills[0],
                      &lbl_session_pct, &lbl_session_label,
                      &bar_session, &lbl_session_reset);
+    lv_obj_add_event_cb(panel_session, draw_reset_caption, LV_EVENT_DRAW_MAIN_END, lbl_session_reset);
 
     // Enterprise-only overlays inside panel_session — hidden until enterprise data arrives
     lbl_session_pct_sym = lv_label_create(panel_session);
@@ -554,6 +591,7 @@ static void init_usage_screen(lv_obj_t* scr) {
     panel_weekly = make_usage_panel(usage_group, L.card[1], L.pills[1],
                      &lbl_weekly_pct, &lbl_weekly_label,
                      &bar_weekly, &lbl_weekly_reset);
+    lv_obj_add_event_cb(panel_weekly, draw_reset_caption, LV_EVENT_DRAW_MAIN_END, lbl_weekly_reset);
     // Recolor enabled so enterprise period box can color pace and reset separately
     lv_label_set_recolor(lbl_weekly_reset, true);
 
@@ -664,13 +702,25 @@ static bool codex_shown(void) { return page == 1 && have_last_data && usage_has_
 
 // The Pro/Max bars' fill colours and pace markers.
 static void apply_bar_colors(const UsageData* data) {
-    if (codex_shown() && !board_caps().mono_panel) {
+    if (codex_shown()) {
         // The Codex page: its own colours, no pace colouring (the marker
         // line still shows where the window is).
-        codex_bar(bar_session, data->session_pct);
-        codex_bar(bar_weekly, data->weekly_pct);
+        // weekly_only means "one card" in codex_view, including a lone
+        // 5-hour window. The original Codex fields identify its duration.
+        const int primary_window = data->codex_session_pct >= 0 ? PACE_SESSION_MINS : PACE_WEEK_MINS;
+        if (!board_caps().mono_panel) {
+            codex_bar(bar_session, data->session_pct);
+            codex_bar(bar_weekly, data->weekly_pct);
+        } else {
+            bar_gradient(bar_session, false);
+            bar_gradient(bar_weekly, false);
+            lv_obj_set_style_bg_color(bar_session,
+                bar_color(data->session_pct, data->session_reset_mins, primary_window), LV_PART_INDICATOR);
+            lv_obj_set_style_bg_color(bar_weekly,
+                bar_color(data->weekly_pct, data->weekly_reset_mins, PACE_WEEK_MINS), LV_PART_INDICATOR);
+        }
         place_pace_tick(tick_session, pace_elapsed_pct(data->session_reset_mins,
-                        data->weekly_only ? PACE_WEEK_MINS : PACE_SESSION_MINS));
+                        primary_window));
         place_pace_tick(tick_weekly, data->weekly_only ? -1.0f : pace_elapsed_pct(data->weekly_reset_mins, PACE_WEEK_MINS));
         return;
     }
@@ -730,6 +780,8 @@ void ui_apply_theme(void) {
     if (have_last_data) {
         apply_bar_colors(&shown_data);
         if (shown_data.enterprise) apply_period_colors(&shown_data);
+        lv_obj_invalidate(panel_session);
+        lv_obj_invalidate(panel_weekly);
     }
 }
 
@@ -748,10 +800,9 @@ void ui_update(const UsageData* data) {
         clock_base_ms = last_data_ms;
         clock_fmt = data->clock_fmt;
         apply_title_font();
-    } else if (clock_base_epoch != 0) {   // clock turned off daemon-side → revert title to "Usage"
+    } else if (clock_base_epoch != 0) {
         clock_base_epoch = 0;
         clock_last_min = -1;
-        lv_label_set_text(lbl_title, "Usage");
         apply_title_font();
     }
 
@@ -804,10 +855,11 @@ static void apply_page_fonts(bool codex) {
 static void render_page(void) {
     if (!have_last_data) return;
     const bool codex = page == 1 && usage_has_codex(&last_data);
-    static int fonts_for = -1;   // the page the fonts are set for
-    if (fonts_for != (int)codex) {
-        fonts_for = codex;
-        apply_page_fonts(codex);
+    apply_page_fonts(codex);
+    if (clock_base_epoch <= 0) {
+        const char* service = codex ? "Codex" : "Claude";
+        if (strcmp(lv_label_get_text(lbl_title), service)) lv_label_set_text(lbl_title, service);
+        apply_title_font();
     }
     if (codex) {   // else Claude's numbers until the director turns back
         const char* pills[PILL_COUNT];
@@ -835,12 +887,21 @@ bool ui_codex_page(void) { return page == 1; }
 
 static void render_meters(const UsageData* data, const char* const* pills) {
     int s_pct = (int)(data->session_pct + 0.5f);
-
-    // No 5-hour limit: the one card left sits in the middle of the space the
-    // two cards take. LVGL skips the set when the position hasn't changed.
-    if (panel_session)
-        lv_obj_set_pos(panel_session, data->weekly_only ? layout_lone_card_x(L) : L.card[0].x,
-                       data->weekly_only ? layout_lone_card_y(L) : L.card[0].y);
+    const SingleCardLayout single = layout_codex_single(L);
+    const bool expanded = codex_shown() && data->weekly_only && single.expanded;
+    const LayoutRect rect = expanded ? single.rect : L.card[0];
+    const int inner_w = rect.w - 2 * L.pad_x;
+    const int reset_y = expanded ? single.reset_y : L.reset_y;
+    lv_obj_set_pos(panel_session,
+        expanded ? rect.x : data->weekly_only ? layout_lone_card_x(L) : rect.x,
+        expanded ? rect.y : data->weekly_only ? layout_lone_card_y(L) : rect.y);
+    lv_obj_set_size(panel_session, rect.w, rect.h);
+    lv_obj_set_pos(lbl_session_pct, 0, expanded ? single.pct_y : 0);
+    if (expanded) lv_obj_align(lbl_session_label, LV_ALIGN_TOP_LEFT, 0, single.pill_y);
+    else lv_obj_align(lbl_session_label, LV_ALIGN_TOP_RIGHT, 0, 1);
+    lv_obj_set_pos(bar_session, 0, expanded ? single.bar_y : L.bar_y);
+    lv_obj_set_width(bar_session, inner_w);
+    lv_obj_set_pos(lbl_weekly_reset, 0, L.reset_y);
 
     if (data->enterprise) {
         // Spending box: big number-only label + small "%" symbol + desc + pace
@@ -854,7 +915,7 @@ static void render_meters(const UsageData* data, const char* const* pills) {
     } else {
         // No 5-hour limit (verified Ultra): the week moves up into the first
         // card and the second card goes away.
-        lv_obj_set_style_text_font(lbl_session_pct, cur_pct_font ? cur_pct_font : L.pct_font, 0);
+        lv_obj_set_style_text_font(lbl_session_pct, expanded ? single.pct_font : cur_pct_font, 0);
         lv_label_set_text(lbl_session_label, pills[data->weekly_only ? 1 : 0]);
         lv_obj_clear_flag(lbl_session_reset, LV_OBJ_FLAG_HIDDEN);
         lv_obj_add_flag(lbl_session_pct_sym, LV_OBJ_FLAG_HIDDEN);
@@ -866,16 +927,14 @@ static void render_meters(const UsageData* data, const char* const* pills) {
         }
     }
 
-    char buf[48];
-
     if (data->enterprise) {
         lv_label_set_text_fmt(lbl_session_pct, "%d", s_pct);
         lv_obj_align_to(lbl_session_pct_sym, lbl_session_pct,
                         LV_ALIGN_OUT_RIGHT_TOP, 4, 12);
     } else {
         lv_label_set_text_fmt(lbl_session_pct, "%d%%", s_pct);
-        format_reset_time(data->session_reset_mins, buf, sizeof(buf), data->weekly_only ? "---" : "Not started");
-        lv_label_set_text(lbl_session_reset, buf);
+        render_reset(lbl_session_reset, data->session_reset_mins,
+                     data->weekly_only ? "Unknown" : "Not started", inner_w, reset_y);
     }
 
     lv_bar_set_value(bar_session, s_pct, LV_ANIM_ON);
@@ -892,9 +951,9 @@ static void render_meters(const UsageData* data, const char* const* pills) {
         lv_label_set_text(lbl_weekly_label, pills[1]);
         lv_label_set_text_fmt(lbl_weekly_pct, "%d%%", w_pct);
         lv_bar_set_value(bar_weekly, w_pct, LV_ANIM_ON);
-        format_reset_time(data->weekly_reset_mins, buf, sizeof(buf), "---");
         lv_obj_set_style_text_font(lbl_weekly_reset, cur_reset_font ? cur_reset_font : L.reset_font, 0);
-        lv_label_set_text(lbl_weekly_reset, buf);
+        render_reset(lbl_weekly_reset, data->weekly_reset_mins,
+                     "Unknown", L.card[1].w - 2 * L.pad_x, L.reset_y);
     }
     apply_bar_colors(data);
 }
@@ -921,11 +980,11 @@ static void update_view_state(void) {
     } else {
         lv_obj_add_flag(pair_group, LV_OBJ_FLAG_HIDDEN);
         lv_obj_clear_flag(usage_group, LV_OBJ_FLAG_HIDDEN);
-        // `opa` (not `opa_layered`) scales every draw of the group and its
-        // children: no layer buffer, so it costs nothing on the C6.
-        // mono_panel: faded text prints broken in 1 bit, so it never fades
+        // Keep text readable; only the bars lose emphasis. Ordinary opa
+        // needs no layer buffer. A mono panel never fades.
         const bool dim = v == 1 && !board_caps().mono_panel;
-        lv_obj_set_style_opa(usage_group, dim ? STALE_OPA : LV_OPA_COVER, 0);
+        lv_obj_set_style_opa(bar_session, dim ? STALE_OPA : LV_OPA_COVER, 0);
+        lv_obj_set_style_opa(bar_weekly, dim ? STALE_OPA : LV_OPA_COVER, 0);
     }
 }
 
@@ -939,7 +998,7 @@ void ui_tick_anim(void) {
 
     uint32_t now = lv_tick_get();
 
-    // Title clock: once the daemon has sent wall-clock time, replace "Usage" with
+    // Title clock: once the daemon has sent wall-clock time, replace the service name with
     // the live time, advanced locally so it ticks every minute between payloads.
     if (clock_base_epoch > 0) {
         time_t cur = (time_t)(clock_base_epoch + (now - clock_base_ms) / 1000);
@@ -961,6 +1020,17 @@ void ui_tick_anim(void) {
     }
 
     if (alert_active) return;          // the status line holds the alert message
+
+    if (view_state == 1 && data_received) {
+        char age[48];
+        layout_format_stale_age(L, now - last_data_ms, age, sizeof(age));
+        if (strcmp(lv_label_get_text(lbl_anim), age)) lv_label_set_text(lbl_anim, age);
+        // A static age stays explicit on every frame and only redraws once
+        // a minute, including at the lowest liveliness and on e-paper.
+        still_shown = nullptr;
+        frozen_shown = nullptr;
+        return;
+    }
 
     if (still) {
         // One glyph, one word per state; redrawn only when it changes.

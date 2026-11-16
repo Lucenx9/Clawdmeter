@@ -25,7 +25,7 @@ static const char* const CODEX_PILL_SETS[][2] = {
 
 // Widest text a card's reset line shows: the weekly window's last day, the
 // spend-capped account's caption, and its period line (its widest pace word and date).
-static const char* const RESET_TEXT_WIDEST[] = { "Resets in 23h 59m", "Resets in 6d 23h", "of spending limit" };
+static const char* const RESET_TEXT_WIDEST[] = { "Reset 23h 59m", "Reset 6d 23h", "of spending limit" };
 #define PERIOD_TEXT_WIDEST "Under pace - Resets May 30"
 #define PERIOD_TEXT_SHORT_WIDEST "Resets May 30"   // where no size fits the pace word too
 
