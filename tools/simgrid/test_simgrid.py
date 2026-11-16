@@ -126,6 +126,40 @@ class RunTest(unittest.TestCase):
             finally:
                 e.close()
 
+    def test_fable_overlay_stays_on_claude_when_turning_pages(self):
+        with tempfile.TemporaryDirectory() as out:
+            e = eng.Engine("154", log_dir=out)
+            try:
+                e.liveliness(1)
+                e.payload(w=80, wf=60, fc="ff00ff", os=31, osr=150, ow=42, owr=5040)
+                e.step(1500)
+
+                def overlay_pixels():
+                    image = e.frame("154")
+                    return sum(r > 180 and g < 70 and b > 180
+                               for r, g, b in (image.getpixel((x, y))
+                                              for y in range(image.height)
+                                              for x in range(image.width)))
+
+                self.assertGreater(overlay_pixels(), 100, "Claude must show the Fable strip")
+                e.beat("codex")
+                e.step(4000)
+                self.assertEqual(overlay_pixels(), 0, "Codex must hide Claude's Fable strip")
+                e.payload(wf=80, fc="ff00ee")
+                e.step(500)
+                self.assertEqual(overlay_pixels(), 0, "a live Fable update must stay hidden on Codex")
+                e.beat("codex")
+                e.step(4000)
+                self.assertGreater(overlay_pixels(), 100, "returning to Claude must restore Fable")
+                e.payload(acct="week")
+                e.step(500)
+                self.assertGreater(overlay_pixels(), 100, "a weekly-only Claude account still has Fable")
+                e.beat("codex")
+                e.step(4000)
+                self.assertEqual(overlay_pixels(), 0, "Codex must also hide the first-card overlay")
+            finally:
+                e.close()
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -8,6 +8,7 @@
 //   button actions   `k1` / `k2` / `k3`  what the primary, secondary and PWR
 //                    buttons do (button_action.h)
 //   palette          `th`  the UI colours (theme_palette.h)
+//   Fable colour     `fc`  the Fable overlay in the weekly bar (fable.h)
 #include <stdint.h>
 #include "theme_palette.h"
 
@@ -26,3 +27,4 @@ void theme_set(const uint32_t p[TH_COUNT]);   // repaint live; saved only when i
 // The Codex page's black-and-white palette (on) or the app's (off). The app's
 // palette keeps arriving and being saved meanwhile; it shows again on `off`.
 void theme_codex_view(bool on);
+void fable_color_set(uint32_t rgb);           // repaint live; saved only when it changes
