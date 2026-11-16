@@ -814,6 +814,31 @@ mod tests {
     }
 
     #[test]
+    fn clearing_a_replacement_after_a_failed_write_clears_the_device() {
+        let mut e = Engine::new(settings(""));
+        e.on_poll_results(T0, vec![(PathBuf::from("/h/.claude"), Ok(reading(15)))]);
+        write(&mut e, T0).unwrap();
+        let at = SystemTime::UNIX_EPOCH + Duration::from_secs(T0 as u64);
+        let alert = |session: &str, at| Alert {
+            message: String::new(),
+            session: session.into(),
+            kind: AlertKind::Permission,
+            at,
+        };
+        e.on_attention(Some(alert("first", at)), &HashMap::new());
+        assert!(write(&mut e, T0 + 1).unwrap().payload.m.is_some());
+        e.on_attention(Some(alert("next", at + Duration::from_secs(2))), &HashMap::new());
+        // The transport fails: do not mark this replacement as written.
+        assert!(e.next_write(T0 + 2, HostClock::default()).unwrap().payload.m.is_some());
+        e.on_attention(None, &[("next".into(), at + Duration::from_secs(3))].into());
+        let w = write(&mut e, T0 + 3).expect("clear the older alert on the device");
+        assert_eq!(w.payload.x, Some(1));
+        assert_eq!(w.payload.m, None);
+        assert!(!e.status(T0 + 3).attention);
+        assert!(write(&mut e, T0 + 4).is_none());
+    }
+
+    #[test]
     fn nothing_before_first_poll_then_poll_write() {
         let mut e = Engine::new(settings(""));
         assert_eq!(e.poll_due(T0), Some(PollReason::Startup));

@@ -224,6 +224,9 @@ pub struct AttentionState {
     pub alert_unsent: bool,
     /// A clear for a shown alert hasn't been sent yet.
     pub clear_unsent: bool,
+    /// An alert reached the device and hasn't been cleared or dismissed.
+    /// It may be older than `alert` while a replacement awaits a write.
+    alert_on_device: bool,
 }
 
 /// Fields to merge into the next payload.
@@ -256,8 +259,7 @@ impl AttentionState {
         if let Some(cur) = &self.alert {
             if let Some(t) = clears.get(&cur.session) {
                 if !cur.session.is_empty() && *t > cur.at {
-                    // Never shown: nothing to clear on the device.
-                    self.clear_unsent = !self.alert_unsent;
+                    self.clear_unsent = self.alert_on_device;
                     self.alert = None;
                     self.alert_unsent = false;
                     raised = false;
@@ -276,7 +278,7 @@ impl AttentionState {
         if now.duration_since(cur.at).unwrap_or_default() < ttl {
             return false;
         }
-        self.clear_unsent = !self.alert_unsent;
+        self.clear_unsent = self.alert_on_device;
         self.alert = None;
         self.alert_unsent = false;
         true
@@ -284,6 +286,7 @@ impl AttentionState {
 
     /// The device ended the alert itself: forget it without sending a clear.
     pub fn dismissed(&mut self) {
+        self.alert_on_device = false;
         if !self.alert_unsent {
             self.alert = None;
             self.clear_unsent = false;
@@ -314,6 +317,7 @@ impl AttentionState {
 
     /// The payload carrying [`AttentionState::fields`] was written.
     pub fn mark_sent(&mut self) {
+        self.alert_on_device = self.alert.is_some();
         self.alert_unsent = false;
         self.clear_unsent = false;
     }
@@ -497,6 +501,56 @@ mod tests {
         let c: HashMap<_, _> = [("s".to_owned(), t0 + Duration::from_secs(1))].into();
         st.ingest(None, &c);
         assert!(!st.pending(), "never shown, nothing to clear");
+    }
+
+    #[test]
+    fn clearing_an_unsent_replacement_clears_the_shown_alert() {
+        let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1000);
+        let mut st = AttentionState::default();
+        st.ingest(Some(alert("first", "", t0)), &HashMap::new());
+        st.mark_sent();
+        st.ingest(Some(alert("next", "", t0 + Duration::from_secs(1))), &HashMap::new());
+        st.ingest(None, &[("next".into(), t0 + Duration::from_secs(2))].into());
+        assert!(!st.active());
+        assert!(st.fields(false).clear, "the first alert is still on the device");
+        st.mark_sent();
+        assert!(!st.pending());
+    }
+
+    #[test]
+    fn expiring_an_unsent_replacement_clears_the_shown_alert() {
+        let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1000);
+        let mut st = AttentionState::default();
+        st.ingest(Some(alert("first", "", t0)), &HashMap::new());
+        st.mark_sent();
+        st.ingest(Some(alert("next", "", t0 + Duration::from_secs(1))), &HashMap::new());
+        assert!(st.expire(t0 + Duration::from_secs(1) + ALERT_TTL));
+        assert!(st.fields(false).clear, "the first alert is still on the device");
+    }
+
+    #[test]
+    fn an_unsent_replacement_preserves_a_pending_clear() {
+        let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1000);
+        let mut st = AttentionState::default();
+        st.ingest(Some(alert("first", "", t0)), &HashMap::new());
+        st.mark_sent();
+        st.ingest(None, &[("first".into(), t0 + Duration::from_secs(1))].into());
+        st.ingest(Some(alert("next", "", t0 + Duration::from_secs(2))), &HashMap::new());
+        st.ingest(None, &[("next".into(), t0 + Duration::from_secs(3))].into());
+        assert!(st.fields(false).clear, "the pending clear must survive the replacement");
+    }
+
+    #[test]
+    fn dismissal_of_the_old_alert_keeps_the_unsent_replacement() {
+        let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1000);
+        let mut st = AttentionState::default();
+        st.ingest(Some(alert("first", "", t0)), &HashMap::new());
+        st.mark_sent();
+        st.ingest(Some(alert("next", "", t0 + Duration::from_secs(1))), &HashMap::new());
+        st.dismissed();
+        assert!(st.active() && st.alert_unsent);
+        st.ingest(None, &[("next".into(), t0 + Duration::from_secs(2))].into());
+        assert!(!st.pending(), "the device already dismissed its older alert");
     }
 
     #[test]

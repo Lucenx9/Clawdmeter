@@ -277,6 +277,30 @@ static void test_codex_alert_edges(void) {
     director_set_liveliness(CLAWD_LIVELINESS_DEFAULT);
 }
 
+static void test_codex_replaces_an_active_claude_alert(void) {
+    static const uint32_t DELAYS[] = { 10, 500, 1500, 4000 };
+    for (int big = 0; big < 2; ++big) {
+        for (uint32_t delay_ms : DELAYS) {
+            world.codex = true;
+            world.has_big = big != 0;
+            fresh_director();
+            director_set_liveliness(1);
+            director_alert("Claude needs you");
+            run_for(delay_ms);
+            director_alert("Codex needs you!", true);
+            run_for(8000);
+            TEST_ASSERT_EQUAL_STRING("codex", director_beat_name());
+            TEST_ASSERT_TRUE(ui_codex_page());
+            TEST_ASSERT_TRUE(fake_codex_alerting());
+            assert_one_clawd();
+            director_tap(100);
+            world.codex = false;
+            run_for(2 * CODEX_PAGE_MS);
+        }
+    }
+    director_set_liveliness(CLAWD_LIVELINESS_DEFAULT);
+}
+
 static void test_screensaver_faces_take_turns(void) {
     world.codex = true;
     fresh_director();
@@ -290,6 +314,26 @@ static void test_screensaver_faces_take_turns(void) {
     run_for(3 * 60 * 1000);
     TEST_ASSERT_EQUAL(codex_before, fake_face_rises[FACE_SKIN_CODEX]);
     assert_one_clawd();
+}
+
+static void test_claude_replaces_codex_during_the_attention_handoff(void) {
+    world.codex = true;
+    fresh_director();
+    director_set_liveliness(1);
+    director_alert("Claude needs you");
+    run_for(4000);
+    director_alert("Codex needs you!", true);
+    run_for(100);
+    director_alert("Claude needs you again");
+    run_for(6000);
+    TEST_ASSERT_EQUAL_STRING("attention", director_beat_name());
+    TEST_ASSERT_TRUE(fake_attention_animating());
+    TEST_ASSERT_FALSE(ui_codex_page());
+    assert_one_clawd();
+    director_alert_clear();
+    world.codex = false;
+    run_for(10000);
+    director_set_liveliness(CLAWD_LIVELINESS_DEFAULT);
 }
 
 static void test_fuzz_one_clawd_with_full_size_sprite(void) {
@@ -467,6 +511,8 @@ int main(int, char**) {
     RUN_TEST(test_codex_alert_on_the_codex_page);
     RUN_TEST(test_screensaver_faces_take_turns);
     RUN_TEST(test_codex_alert_edges);
+    RUN_TEST(test_codex_replaces_an_active_claude_alert);
+    RUN_TEST(test_claude_replaces_codex_during_the_attention_handoff);
     RUN_TEST(test_fuzz_one_clawd_with_full_size_sprite);
     RUN_TEST(test_fuzz_one_clawd_without_full_size_sprite);
     RUN_TEST(test_no_nonsense_sits_still_through_everything_but_taps);

@@ -200,15 +200,23 @@ static void end_attention(AttnEnd how) {
 }
 
 void director_alert(const char* message, bool codex) {
-    if (attention_on && attention_codex && !codex) {
-        // Claude needs you too: Clawd takes over from the cloud (on the
-        // Codex page run_codex hands back, and arrive_meters fetches him).
-        attention_codex = false;
-        codex_sprite_alert(false);
-    }
     // With no Codex numbers to show its page would carry Claude's: Clawd
     // fetches you for it instead.
     if (codex && !ui_codex_available()) codex = false;
+    if (attention_on && attention_codex != codex) {
+        attention_codex = codex;
+        codex_sprite_alert(false);
+        // Finish Clawd's walk-off before handing the replacement to Codex.
+        // In the opposite direction run_codex sends the cloud off first.
+        if (beat == B_ATTENTION) {
+            if (codex) {
+                mascot_attention(false, true);
+                if (step == 0) next_step();
+            } else {
+                step = 0;   // Claude asked again before the handoff finished
+            }
+        }
+    }
     if (!attention_on) attention_codex = codex;
     if (!attention_on) {
         // Remember what it interrupts, so it can return there. A new alert
