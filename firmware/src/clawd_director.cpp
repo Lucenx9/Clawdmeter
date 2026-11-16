@@ -833,8 +833,8 @@ static bool codex_page_due(uint32_t now) {
 static void run_home(uint32_t now) {
     if (idle_is_asleep()) return;                 // nobody's looking
     if (codex_page_due(now)) {
-        page_request = false;
         if (minimal) {                            // a still swap: nothing moves in minimal mode
+            page_request = false;
             mascot_place_away();
             codex_sprite_show_now(true);
             ui_show_codex_page(true);
@@ -842,7 +842,12 @@ static void run_home(uint32_t now) {
             go(B_CODEX);
             return;
         }
-        if (mascot_free() || mascot_away()) { go(B_CODEX_IN); return; }
+        if (mascot_free() || mascot_away()) {
+            page_request = false;
+            go(B_CODEX_IN);
+            return;
+        }
+        if (page_request) mascot_hurry_home();
     }
     if (minimal) return;
     if (joy_pending) {

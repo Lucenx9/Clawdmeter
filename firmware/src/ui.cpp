@@ -40,6 +40,9 @@ static_assert(LAYOUT_BATT_W == ICON_BATTERY_W && LAYOUT_BATT_W_SMALL == ICON_BAT
 #define COL_RED       THEME_RED
 #define COL_BAR_BG    THEME_BAR_BG
 
+// Keep sub-percent precision while the public bar value follows its fill.
+static constexpr int METER_VALUE_SCALE = 100;
+
 // Colours set once when a widget is built are registered here, so a new
 // palette from the app (ui_apply_theme) repaints them in place. Colours that
 // follow the data (bar fills, the pace text) are recomputed instead.
@@ -341,10 +344,12 @@ static FableOverlay make_fable_overlay(lv_obj_t* bar) {
     return f;
 }
 
-// `value`: the bar's value (its weekly %), whose fill the overlay stays in.
+// `value`: target weekly %, for snapping to the final fill. Width follows
+// the bar's current animated value so the strip stays inside it throughout.
 static void place_fable(const FableOverlay& f, int fable_pct, int value) {
-    const int bar_w = lv_obj_get_width(lv_obj_get_parent(f.clip));
-    const int fill_w = fable_fill_w(bar_w, value);
+    lv_obj_t* bar = lv_obj_get_parent(f.clip);
+    const int bar_w = lv_obj_get_width(bar);
+    const int fill_w = bar_w * lv_bar_get_value(bar) / lv_bar_get_max_value(bar);
     // A fill narrower than its two rounded ends is drawn by lv_bar clipped
     // to the track's corners (or not at all at 1 px), which the strip can't
     // follow: no overlay until the fill is that wide. A device-only limit;
@@ -399,8 +404,9 @@ static lv_obj_t* make_bar(lv_obj_t* parent, int x, int y, int w, int h) {
     lv_obj_t* bar = lv_bar_create(parent);
     lv_obj_set_pos(bar, x, y);
     lv_obj_set_size(bar, w, h);
-    lv_bar_set_range(bar, 0, 100);
+    lv_bar_set_range(bar, 0, 100 * METER_VALUE_SCALE);
     lv_bar_set_value(bar, 0, LV_ANIM_OFF);
+    lv_obj_set_style_anim_duration(bar, minimal_mode() ? 0 : 200, LV_PART_MAIN);
     themed_bg(bar, TH_BAR_BG, LV_PART_MAIN);
     lv_obj_set_style_bg_opa(bar, LV_OPA_COVER, LV_PART_MAIN);
     lv_obj_set_style_radius(bar, 6, LV_PART_MAIN);
@@ -766,11 +772,47 @@ static void codex_bar(lv_obj_t* bar, float pct) {
 
 static bool codex_shown(void) { return page == 1 && have_last_data && usage_has_codex(&last_data); }
 
-// The Pro/Max bars' fill colours, pace markers and Fable overlay.
-static void apply_bar_colors(const UsageData* data) {
-    if (codex_shown()) {
+static void refresh_fable(void) {
+    if (codex_shown() || shown_data.enterprise) {
         hide_fable(fable_session);
         hide_fable(fable_weekly);
+    } else if (shown_data.weekly_only) {
+        place_fable(fable_session, shown_data.fable_pct, (int)(shown_data.session_pct + 0.5f));
+        hide_fable(fable_weekly);
+    } else {
+        hide_fable(fable_session);
+        place_fable(fable_weekly, shown_data.fable_pct, (int)(shown_data.weekly_pct + 0.5f));
+    }
+}
+
+// Keep the bar's public value at its visible fill, so Fable can follow it.
+static void animate_meter(void* object, int32_t value) {
+    lv_bar_set_value((lv_obj_t*)object, value, LV_ANIM_OFF);
+    refresh_fable();
+}
+
+static void set_meter_value(lv_obj_t* bar, int value, lv_anim_enable_t animation) {
+    value = LV_CLAMP(0, value, 100) * METER_VALUE_SCALE;
+    const int from = lv_bar_get_value(bar);
+    const uint32_t duration = lv_obj_get_style_anim_duration(bar, LV_PART_MAIN);
+    lv_anim_delete(bar, animate_meter);
+    if (animation == LV_ANIM_OFF || from == value || duration == 0) {
+        lv_bar_set_value(bar, value, LV_ANIM_OFF);
+        return;
+    }
+    lv_anim_t a;
+    lv_anim_init(&a);
+    lv_anim_set_var(&a, bar);
+    lv_anim_set_exec_cb(&a, animate_meter);
+    lv_anim_set_values(&a, from, value);
+    lv_anim_set_duration(&a, duration);
+    lv_anim_start(&a);
+}
+
+// The Pro/Max bars' fill colours, pace markers and Fable overlay.
+static void apply_bar_colors(const UsageData* data) {
+    refresh_fable();
+    if (codex_shown()) {
         // The Codex page: its own colours, no pace colouring (the marker
         // line still shows where the window is).
         // weekly_only means "one card" in codex_view, including a lone
@@ -800,8 +842,6 @@ static void apply_bar_colors(const UsageData* data) {
         lv_obj_set_style_bg_color(bar_session, pct_color(data->session_pct), LV_PART_INDICATOR);
         place_pace_tick(tick_session, -1.0f);
         place_pace_tick(tick_weekly, -1.0f);
-        hide_fable(fable_session);
-        hide_fable(fable_weekly);
         return;
     }
     if (data->weekly_only) {
@@ -810,12 +850,8 @@ static void apply_bar_colors(const UsageData* data) {
             bar_color(data->session_pct, data->session_reset_mins, PACE_WEEK_MINS), LV_PART_INDICATOR);
         place_pace_tick(tick_session, pace_elapsed_pct(data->session_reset_mins, PACE_WEEK_MINS));
         place_pace_tick(tick_weekly, -1.0f);
-        place_fable(fable_session, data->fable_pct, (int)(data->session_pct + 0.5f));
-        hide_fable(fable_weekly);
         return;
     }
-    hide_fable(fable_session);
-    place_fable(fable_weekly, data->fable_pct, (int)(data->weekly_pct + 0.5f));
     lv_obj_set_style_bg_color(bar_session,
         bar_color(data->session_pct, data->session_reset_mins, PACE_SESSION_MINS), LV_PART_INDICATOR);
     place_pace_tick(tick_session, pace_elapsed_pct(data->session_reset_mins, PACE_SESSION_MINS));
@@ -1016,20 +1052,20 @@ static void render_meters(const UsageData* data, const char* const* pills, lv_an
                      data->weekly_only ? "Unknown" : "Not started", inner_w, reset_y);
     }
 
-    lv_bar_set_value(bar_session, s_pct, animation);
+    set_meter_value(bar_session, s_pct, animation);
 
     if (data->enterprise) {
         // Period box: time % + dynamic pace color + "Resets <date>" label
         lv_label_set_text(lbl_weekly_label, pills[3]);
         lv_label_set_text_fmt(lbl_weekly_pct, "%d%%", data->time_pct);
-        lv_bar_set_value(bar_weekly, data->time_pct, animation);
+        set_meter_value(bar_weekly, data->time_pct, animation);
         lv_obj_set_style_text_font(lbl_weekly_reset, L.period_font, 0);
         apply_period_colors(data);
     } else {
         int w_pct = (int)(data->weekly_pct + 0.5f);
         lv_label_set_text(lbl_weekly_label, pills[1]);
         lv_label_set_text_fmt(lbl_weekly_pct, "%d%%", w_pct);
-        lv_bar_set_value(bar_weekly, w_pct, animation);
+        set_meter_value(bar_weekly, w_pct, animation);
         lv_obj_set_style_text_font(lbl_weekly_reset, cur_reset_font ? cur_reset_font : L.reset_font, 0);
         render_reset(lbl_weekly_reset, data->weekly_reset_mins,
                      "Unknown", L.card[1].w - 2 * L.pad_x, L.reset_y);

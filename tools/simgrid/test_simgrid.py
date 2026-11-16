@@ -217,6 +217,40 @@ class RunTest(unittest.TestCase):
             finally:
                 e.close()
 
+    def test_fable_never_extends_past_the_animated_weekly_fill(self):
+        with tempfile.TemporaryDirectory() as out:
+            e = eng.Engine("154", log_dir=out)
+            reference = eng.Engine("154", log_dir=os.path.join(out, "reference"))
+            try:
+                for engine in (e, reference):
+                    engine.liveliness(1)
+                    engine.payload(w=10)
+                    engine.step(1500)
+                e.payload(w=80, wf=100, fc="ff00ff")
+                reference.payload(w=80)
+                for elapsed in range(16, 257, 16):
+                    e.step(16)
+                    reference.step(16)
+                    image = e.frame("154")
+                    plain = reference.frame("154")
+                    # Compare against the same bar without the overlay,
+                    # which can cover all of the fill early in the update.
+                    fill = [x for x, (r, g, b) in
+                            ((x, plain.getpixel((x, 166))) for x in range(18, 222))
+                            if r > g + 15 and r > b + 15]
+                    fable = [x for x, (r, g, b) in
+                             ((x, image.getpixel((x, 166))) for x in range(18, 222))
+                             if r > 150 and g < 60 and b > 150]
+                    self.assertTrue(fill, "a red weekly fill must be present")
+                    self.assertTrue(fable, "the Fable overlay must be present")
+                    self.assertLessEqual(max(fable), max(fill) + 1,
+                                         f"Fable must stay inside the live weekly fill at {elapsed}ms")
+                self.assertAlmostEqual(max(fill), 180, delta=2, msg="the weekly fill must reach 80%")
+                self.assertAlmostEqual(max(fable), 119, delta=2, msg="Fable must reach half the bar")
+            finally:
+                e.close()
+                reference.close()
+
     def test_codex_respects_no_nonsense_but_keeps_tap_feedback(self):
         with tempfile.TemporaryDirectory() as out:
             e = eng.Engine("154", log_dir=out)

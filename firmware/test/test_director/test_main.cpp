@@ -209,6 +209,23 @@ static void test_codex_page_turns_and_yields_to_attention(void) {
     director_set_liveliness(CLAWD_LIVELINESS_DEFAULT);
 }
 
+// A page press during a lurk waits for the actor without getting lost.
+static void test_page_button_during_a_lurk_is_not_lost(void) {
+    world.codex = true;
+    fresh_director();
+    director_set_liveliness(1);
+    page_since = fake_now_ms;
+    TEST_ASSERT_TRUE(mascot_lurk());
+    run_for(200);
+    TEST_ASSERT_FALSE(mascot_free());
+    TEST_ASSERT_FALSE(mascot_away());
+    director_page_button();
+    run_for(4000);
+    TEST_ASSERT_TRUE_MESSAGE(ui_codex_page(), "the button must turn the page before the automatic timer");
+    assert_one_clawd();
+    director_set_liveliness(CLAWD_LIVELINESS_DEFAULT);
+}
+
 // A Codex alert: the cloud fetches you on the Codex page (Clawd stays out);
 // a tap ends it and tells the app. A Claude alert meanwhile hands over to
 // Clawd.
@@ -508,6 +525,7 @@ int main(int, char**) {
     UNITY_BEGIN();
     RUN_TEST(test_screensaver_calm_dip_keeps_one_clawd);
     RUN_TEST(test_codex_page_turns_and_yields_to_attention);
+    RUN_TEST(test_page_button_during_a_lurk_is_not_lost);
     RUN_TEST(test_codex_alert_on_the_codex_page);
     RUN_TEST(test_screensaver_faces_take_turns);
     RUN_TEST(test_codex_alert_edges);

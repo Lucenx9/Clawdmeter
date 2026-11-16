@@ -251,9 +251,14 @@ The cloud follows the same liveliness tuning as Clawd: No-nonsense holds
 its cursor still and disables idle acts and hook reactions. Taps and alerts
 still get their feedback; an act already playing finishes before it rests.
 The other levels scale its idle gaps with the existing `idle_gap_pct`.
+If the page button is pressed during a lurk or walk, its request stays
+pending until the actor can leave and the page turn starts. Clawd uses his
+existing hurry-home motion so a manual request needn't wait for the full trip.
 On a page turn the bars take the new service's values at once, without
 interpolating from the other service's usage. Updates on the same page keep
-the usual bar animation.
+the 200 ms linear bar animation; minimal panels update at once.
+Fable follows that animation's visible fill on every frame, including when
+a new usage update interrupts it, so its strip never extends into the track.
 
 A single Codex limit uses the rectangle occupied by both cards, with its
 label, percentage, bar and reset on separate rows. The percentage grows up
