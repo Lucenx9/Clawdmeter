@@ -12,6 +12,7 @@ struct FakeWorld {
     bool asleep;
     bool has_big;          // PSRAM boards: the performer, lurk trips, the attention walk-on
     bool has_touch;        // BoardCaps.has_touch
+    bool codex;            // the app sends Codex numbers (the Codex page exists)
 };
 extern FakeWorld world;
 
@@ -24,6 +25,7 @@ struct OnScreen {
     bool big;              // the full-size sprite (lurk trip, attention)
     bool performer;        // the performer on the meters
     bool face;             // the face, any part of it
+    bool codex;            // the Codex page's cloud in his seat (or hopping on / off)
 };
 OnScreen fake_on_screen(void);
 bool     fake_corner_seated_still(void);   // in his seat, not acting or walking

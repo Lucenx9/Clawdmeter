@@ -15,7 +15,9 @@ This fork also shows **OpenAI Codex** usage limits. While Codex CLI is signed
 in with ChatGPT (`~/.codex/auth.json`), the app reads Codex's 5-hour and
 weekly windows from `chatgpt.com/backend-api/wham/usage` every 5 minutes
 (read-only: no message is sent, the token is never refreshed) and the device
-alternates between Claude's meters and Codex's every 10 seconds. A window
+alternates between Claude's meters and Codex's every 10 seconds. Codex's page
+has its own black-and-white look, a `> verb_` status line, and its own
+animated pixel-art Codex cloud, which hops into the seat after Clawd walks off. A window
 Codex's plan doesn't have is left out. Set a button to **Claude / Codex**
 (`button_secondary = page` in the config) to switch pages by hand, or
 `codex = off` to turn it off.

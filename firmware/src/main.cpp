@@ -6,6 +6,7 @@
 #include <driver/gpio.h>
 
 #include "data.h"
+#include "codex_sprite.h"
 #include "ui.h"
 #include "ble.h"
 #include "performer.h"
@@ -439,7 +440,7 @@ static void button_run_press(ButtonSlot slot, ButtonRun* r, int32_t action, bool
         brightness_cycle();
         break;
     case BTN_KIND_PAGE:
-        ui_next_page();
+        director_page_button();
         break;
     default:
         break;
@@ -474,6 +475,7 @@ void loop() {
     sound_hal_tick();
     performer_tick();
     mascot_tick();
+    codex_sprite_tick();
     director_tick();
     if (director_take_dismissed()) ble_send_dismiss();
     // Rotation transition (blank + ramp) would fight the idle fade — skip

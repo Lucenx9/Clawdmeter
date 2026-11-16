@@ -221,6 +221,28 @@ event, any activity level above 0 (tool calls are hook events too), a tap, a
 button, an alert, or a real sample where session % went up. Usage going up
 also wakes the screensaver, which covers the slow-clock-only case.
 
+### The Codex page (this fork)
+
+While the app sends Codex numbers (`os`/`ow`), the meters alternate between
+Claude's page and Codex's every `CODEX_PAGE_MS` (10 s), or at once on a button
+set to `page` (`director_page_button`). It's three beats, and still one
+creature on screen (`test_director` counts the Codex cloud too):
+
+- **codex-in** (from home, with him seated or in an idle act of his own): an
+  idle act finishes, he walks off left at 2x, and only once he's away do the
+  meters turn (`ui_show_codex_page`: Codex's cards, its black-and-white palette
+  via `theme_codex_view`, a `> verb_` status line) and the Codex cloud
+  (`codex_sprite.cpp`, art in `codex_art.h`) hop into his seat.
+- **codex**: the cloud idles on its own (blinking cursor; now and then a hop,
+  a nudge of its `>`, or three thinking dots). A tap makes it hop. Clawd's
+  own beats (show, screensaver, reactions) wait. It ends when the page's time
+  is up, the button asks, Codex numbers stop, the meters go stale or
+  disconnected, or an alert comes in.
+- **codex-out**: the cloud hops off left, the meters turn back, and he walks
+  home (`arrive_meters`, so a waiting alert gets him straight away).
+
+Minimal mode swaps the page and the still sprites with no walk or hop.
+
 ## Animation principles and implementation
 
 | Principle | Implementation |

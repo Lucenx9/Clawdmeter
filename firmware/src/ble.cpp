@@ -152,6 +152,8 @@ static void load_owner() {
 
 // Delete every stored bond that isn't the owner, so the board stays paired to
 // exactly one machine. Removing a bond shifts the indices, so restart from 0.
+static int pruned_at_boot = 0;   // shown by `ble`: bonds prune_foreign_bonds removed
+
 static void prune_foreign_bonds() {
     if (!owner_set) return;
     bool removed;
@@ -163,6 +165,7 @@ static void prune_foreign_bonds() {
             if (strcmp(a.toString().c_str(), owner_addr) != 0) {
                 Serial.printf("BLE: pruning non-owner bond %s\n", a.toString().c_str());
                 NimBLEDevice::deleteBond(a);
+                pruned_at_boot++;
                 removed = true;
                 break;
             }
@@ -346,6 +349,13 @@ class ServerCallbacks : public NimBLEServerCallbacks {
             param_fix_at_ms  = millis() + 2000;
         }
         if (id == ZERO_ADDR) return;
+        // A failed pairing or encryption (a host using LE privacy reconnecting
+        // after a reboot, a collision with our own startSecurity) reports
+        // the unresolved random address, unencrypted. That's not another
+        // machine: judging it would delete the bond NimBLE resolves it to,
+        // which is the owner's own, and the board would forget its computer
+        // after every reboot. Only an encrypted link says who the peer is.
+        if (!info.isEncrypted()) return;
         if (!owner_set) {
             claim_owner(id);
         } else if (strcmp(id.c_str(), owner_addr) != 0) {
@@ -582,8 +592,10 @@ void ble_clear_bonds(void) {
 
 void ble_print_status(void) {
     static const char* names[] = {"INIT", "ADVERTISING", "CONNECTED", "DISCONNECTED"};
-    Serial.printf("BLE status: state=%s bonds=%d owner=%s\n",
-        names[state], NimBLEDevice::getNumBonds(), owner_set ? owner_addr : "none");
+    Serial.printf("BLE status: state=%s bonds=%d owner=%s pruned_at_boot=%d\n",
+        names[state], NimBLEDevice::getNumBonds(), owner_set ? owner_addr : "none", pruned_at_boot);
+    for (int i = 0; i < NimBLEDevice::getNumBonds(); i++)
+        Serial.printf("BLE status: bond %s\n", NimBLEDevice::getBondedAddress(i).toString().c_str());
     if (!server) return;
     for (uint8_t i = 0; i < server->getConnectedCount(); i++) {
         NimBLEConnInfo ci = server->getPeerInfo(i);

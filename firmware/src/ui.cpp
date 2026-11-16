@@ -1,6 +1,7 @@
 #include "ui.h"
 #include "performer.h"
 #include "mascot.h"
+#include "codex_sprite.h"
 #include "clawd_anim.h"
 #include "clawd_policy.h"
 #include "minimal_mode.h"
@@ -27,6 +28,7 @@ static_assert(LAYOUT_BATT_W == ICON_BATTERY_W && LAYOUT_BATT_W_SMALL == ICON_BAT
 
 // Anthropic brand palette — design tokens live in theme.h
 #include "theme.h"
+#include "clawd_prefs.h"
 #define COL_BG        THEME_BG
 #define COL_PANEL     THEME_PANEL
 #define COL_TEXT      THEME_TEXT
@@ -185,6 +187,25 @@ static uint8_t fitting_verb(uint8_t i) {
     return i;
 }
 
+// The Codex page's status words, shown as a prompt: "> <verb>_".
+static const char* const codex_verbs[] = {
+    "Thinking", "Exploring", "Planning", "Reading", "Searching", "Patching",
+    "Editing", "Testing", "Reasoning", "Compiling", "Diffing", "Grepping",
+    "Building", "Reviewing", "Running", "Refactoring", "Debugging", "Shipping",
+};
+#define CODEX_VERB_COUNT (sizeof(codex_verbs) / sizeof(codex_verbs[0]))
+
+// The `i`th Codex verb, or the next one that fits the status line.
+static const char* codex_verb(uint8_t i) {
+    for (uint8_t n = 0; n < CODEX_VERB_COUNT; n++) {
+        const char* v = codex_verbs[(i + n) % CODEX_VERB_COUNT];
+        char buf[40];
+        snprintf(buf, sizeof(buf), "> %s_", v);
+        if (layout_text_width(L.status_font, buf) <= L.status_w) return v;
+    }
+    return codex_verbs[0];
+}
+
 static lv_color_t pct_color(float pct) {
     if (pct >= 80.0f) return COL_RED;
     if (pct >= 50.0f) return COL_AMBER;
@@ -204,9 +225,10 @@ static UsageData last_data;                 // the last payload (Claude's number
 static UsageData shown_data;                // what the cards show now: recoloured when a setting changes
 static bool have_last_data = false;
 
-// ---- Pages: 0 = Claude, 1 = Codex (only while the payload carries it).
+// ---- Pages: 0 = Claude, 1 = Codex. The director turns them (it swaps the
+// corner Clawd for the Codex cloud); the cards show Codex only while the
+// payload carries it.
 static int      page = 0;
-static uint32_t page_since = 0;
 static void render_page(void);
 
 static lv_color_t bar_color(float used_pct, int reset_mins, int window_mins) {
@@ -604,6 +626,8 @@ void ui_init(void) {
             lv_image_set_src(logo_img, &logo_dsc);
             lv_obj_set_pos(logo_img, L.logo_x, top);
         }
+        // The Codex page's cloud takes the same seat while Clawd is away.
+        codex_sprite_create(scr, L.logo_x, feet, cell);
     }
 
     // Clawd performs in front of the meters, fully drawn, like the
@@ -732,23 +756,29 @@ static void render_meters(const UsageData* data, const char* const* pills);
 // Draw the current page from the last payload.
 static void render_page(void) {
     if (!have_last_data) return;
-    if (page == 1 && usage_has_codex(&last_data)) {
+    if (page == 1 && usage_has_codex(&last_data)) {   // else Claude's numbers until the director turns back
         const char* pills[PILL_COUNT];
         for (int i = 0; i < PILL_COUNT; i++) pills[i] = L.pills[i];
         shown_data = codex_view(&last_data, pills);
         render_meters(&shown_data, pills);
     } else {
-        page = 0;
         shown_data = last_data;
         render_meters(&shown_data, L.pills);
     }
 }
 
-void ui_next_page(void) {
-    page_since = lv_tick_get();
-    page = (page == 0 && have_last_data && usage_has_codex(&last_data)) ? 1 : 0;
+bool ui_codex_available(void) { return have_last_data && usage_has_codex(&last_data); }
+
+void ui_show_codex_page(bool on) {
+    if ((page == 1) == on) return;
+    page = on ? 1 : 0;
+    theme_codex_view(on);
     render_page();
+    frozen_shown = nullptr;   // the status line changes voice on the next tick
+    anim_last_ms = 0;
 }
+
+bool ui_codex_page(void) { return page == 1; }
 
 static void render_meters(const UsageData* data, const char* const* pills) {
     int s_pct = (int)(data->session_pct + 0.5f);
@@ -850,11 +880,6 @@ bool ui_meters_live(void) { return view_state == 2; }
 
 void ui_tick_anim(void) {
     update_view_state();
-    // The pages turn by themselves while the meters are live.
-    if (have_last_data && usage_has_codex(&last_data) && view_state == 2
-        && lv_tick_get() - page_since >= UI_PAGE_MS) {
-        ui_next_page();
-    }
     if (pair_hint == PAIR_HINT_CLEARED && lv_tick_get() - pair_hint_since >= PAIR_CLEARED_SHOW_MS)
         ui_set_pair_hint(PAIR_HINT_NORMAL);
     const bool still = minimal_mode();   // minimal: nothing moves but the numbers
@@ -928,6 +953,17 @@ void ui_tick_anim(void) {
         text = (board_caps().mono_panel || (anim_msg_idx & 1)) ? stale : "Listening";
     } else if (now - connected_at_ms < 5000) {
         text = "Connected";
+    } else if (page == 1) {
+        // The Codex page talks like a terminal: "> Exploring_", the cursor
+        // blinking with the spinner's beat.
+        static char cbuf[48];
+        const bool cursor = !tune.spinner || anim_phase < SPINNER_PHASES / 2;
+        const char* verb = codex_verb(anim_msg_idx);
+        if (!tune.spinner && verb == frozen_shown) return;
+        frozen_shown = verb;
+        snprintf(cbuf, sizeof(cbuf), "> %s%s", verb, cursor ? "_" : " ");
+        lv_label_set_text(lbl_anim, cbuf);
+        return;
     } else {
         text = anim_messages[anim_verb_idx];
     }

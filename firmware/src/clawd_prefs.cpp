@@ -6,6 +6,8 @@
 #include "clawd_anim.h"
 #include "mascot.h"
 #include "performer.h"
+#include "codex_sprite.h"
+#include <string.h>
 #include "button_action.h"
 #include "hal/board_caps.h"
 #include <Preferences.h>
@@ -109,19 +111,70 @@ int32_t button_action_get(ButtonSlot slot) {
     return (slot >= 0 && slot < BTN_SLOT_COUNT) ? btn_actions[slot] : BTN_ACT_NONE;
 }
 
+// The palette the app chose; the live one differs only while the meters
+// show the Codex page (theme_codex_view).
+static uint32_t user_palette[TH_COUNT];
+static bool     user_palette_known = false;
+static bool     codex_view = false;
+
+// Codex's black and white. Clawd's own colours stay the user's (he's away
+// while it shows, and must come back as he left).
+static void codex_palette(uint32_t out[TH_COUNT]) {
+    static const uint32_t CODEX[TH_COUNT] = {
+        0x000000, 0x161616, 0xf5f5f5, 0x9e9e9e, 0xffffff,
+        0xe8e8e8, 0xd9a43a, 0xe5484d, 0x2b2b2b, 0, 0,
+    };
+    memcpy(out, CODEX, sizeof(CODEX));
+    out[TH_CLAWD] = user_palette[TH_CLAWD];
+    out[TH_EYE]   = user_palette[TH_EYE];
+}
+
+static void remember_live_palette(void) {
+    if (user_palette_known) return;
+    for (int i = 0; i < TH_COUNT; i++) user_palette[i] = theme_hex((ThemeColor)i);
+    user_palette_known = true;
+}
+
+static void apply_live(const uint32_t p[TH_COUNT]) {
+    if (!theme_palette_set(p)) return;
+    ui_apply_theme();
+    face_apply_theme();
+    clawd_anim_recolor();
+    mascot_repaint();
+    performer_repaint();
+    codex_sprite_repaint();
+}
+
 void theme_set(const uint32_t p[TH_COUNT]) {
     if (board_caps().mono_panel) return;   // 1-bit: the default palette only
-    if (!theme_palette_set(p)) return;
+    remember_live_palette();
+    if (memcmp(user_palette, p, sizeof(user_palette)) == 0) return;
+    memcpy(user_palette, p, sizeof(user_palette));
     char hex[THEME_HEX_LEN + 1];
     theme_format_hex(p, hex);
     Preferences prefs;
     prefs.begin("clawdmeter", false);
     prefs.putBytes("theme", hex, THEME_HEX_LEN);
     prefs.end();
-    ui_apply_theme();
-    face_apply_theme();
-    clawd_anim_recolor();
-    mascot_repaint();
-    performer_repaint();
+    if (codex_view) {
+        uint32_t c[TH_COUNT];
+        codex_palette(c);
+        apply_live(c);
+    } else {
+        apply_live(p);
+    }
     Serial.printf("Theme: %s\n", hex);
+}
+
+void theme_codex_view(bool on) {
+    if (board_caps().mono_panel || on == codex_view) return;
+    remember_live_palette();
+    codex_view = on;
+    if (on) {
+        uint32_t c[TH_COUNT];
+        codex_palette(c);
+        apply_live(c);
+    } else {
+        apply_live(user_palette);
+    }
 }

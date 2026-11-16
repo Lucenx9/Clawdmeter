@@ -8,10 +8,12 @@
 
 void ui_init(void);
 void ui_update(const UsageData* data);
-// Claude's meters and, when the app sends Codex numbers, Codex's: the page
-// turns by itself every UI_PAGE_MS, or now (a button set to "page").
-#define UI_PAGE_MS 10000
-void ui_next_page(void);
+// Claude's meters, or Codex's (the director turns the page: clawd_director.h).
+// The Codex page also swaps in Codex's palette (clawd_prefs.h
+// theme_codex_view) and a terminal-style status line.
+bool ui_codex_available(void);       // the last payload carried Codex numbers
+void ui_show_codex_page(bool on);
+bool ui_codex_page(void);
 // Pace marker on the Pro/Max usage bars (`pm`, pace.h); redraws the last data.
 void ui_set_pace_marker(bool on);
 void ui_apply_theme(void);          // repaint everything in the live palette (theme_palette.h)

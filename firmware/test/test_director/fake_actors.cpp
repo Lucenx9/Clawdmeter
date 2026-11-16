@@ -5,6 +5,7 @@
 // until it ends.
 #include "fake_world.h"
 #include "mascot.h"
+#include "codex_sprite.h"
 #include "performer.h"
 #include "face.h"
 #include "ui.h"
@@ -227,7 +228,31 @@ void face_blink(bool twice) { f_busy_until = now() + (twice ? 500 : 250); }
 void face_set_resting(bool) {}
 void face_look_at_x(int, uint32_t hold_ms) { f_busy_until = now() + hold_ms + 300; }
 
+// ─── Codex cloud (codex_sprite.h) ────────────────────────────────────────────
+enum CState { C_AWAY, C_IN, C_SEATED, C_HOP, C_OUT };
+static CState   c_state = C_AWAY;
+static uint32_t c_until = 0;
+
+void codex_sprite_create(lv_obj_t*, int, int, int) {}
+void codex_sprite_enter(void) { c_state = C_IN; c_until = now() + 1200; }
+void codex_sprite_leave(void) { if (c_state != C_AWAY) { c_state = C_OUT; c_until = now() + 1200; } }
+void codex_sprite_show_now(bool on) { c_state = on ? C_SEATED : C_AWAY; }
+void codex_sprite_hop(void) { if (c_state == C_SEATED) { c_state = C_HOP; c_until = now() + 420; } }
+bool codex_sprite_visible(void) { return c_state != C_AWAY; }
+bool codex_sprite_busy(void) { return c_state == C_IN || c_state == C_OUT || c_state == C_HOP; }
+void codex_sprite_set_minimal(bool) {}
+void codex_sprite_repaint(void) {}
+void codex_sprite_tick(void) {
+    if (!done(c_until)) return;
+    if (c_state == C_IN || c_state == C_HOP) c_state = C_SEATED;
+    else if (c_state == C_OUT) c_state = C_AWAY;
+}
+
 // ─── The situation ───────────────────────────────────────────────────────────
+static bool codex_page = false;
+bool ui_codex_available(void) { return world.codex; }
+void ui_show_codex_page(bool on) { codex_page = on; }
+bool ui_codex_page(void) { return codex_page; }
 bool ui_meters_live(void) { return world.meters_live; }
 void ui_set_alert_text(const char*) {}
 bool idle_is_asleep(void) { return world.asleep; }
@@ -239,6 +264,7 @@ int  signals_activity(void) { return world.activity; }
 void fake_actors_tick(void) {
     performer_tick();
     mascot_tick();
+    codex_sprite_tick();
 }
 
 OnScreen fake_on_screen(void) {
@@ -248,6 +274,7 @@ OnScreen fake_on_screen(void) {
     s.big = (m_mode == M_LURK || m_mode == M_BIG_IN || m_mode == M_BIG_ACT || m_mode == M_BIG_OUT);
     s.performer = performer_visible();
     s.face = face_visible();
+    s.codex = codex_sprite_visible();
     return s;
 }
 
@@ -255,5 +282,5 @@ bool fake_corner_seated_still(void) { return m_mode == M_SEATED; }
 bool fake_attention_animating(void) { return mascot_in_attention(); }
 
 int fake_clawds(const OnScreen& s) {
-    return (int)s.corner + (int)s.big + (int)s.performer + (int)s.face;
+    return (int)s.corner + (int)s.big + (int)s.performer + (int)s.face + (int)s.codex;
 }

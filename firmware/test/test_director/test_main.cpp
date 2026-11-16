@@ -18,8 +18,8 @@ static void check_one_clawd(void) {
     if (broke || fake_clawds(s) <= 1) return;
     broke = true;
     broke_at = fake_now_ms;
-    snprintf(broke_what, sizeof(broke_what), "beat %s:%u corner %d big %d performer %d face %d",
-             director_beat_name(), step, s.corner, s.big, s.performer, s.face);
+    snprintf(broke_what, sizeof(broke_what), "beat %s:%u corner %d big %d performer %d face %d codex %d",
+             director_beat_name(), step, s.corner, s.big, s.performer, s.face, s.codex);
 }
 
 // Which beats a run went through, so a fuzz pass can't be vacuous.
@@ -120,6 +120,7 @@ static int fuzz_level = CLAWD_LIVELINESS_DEFAULT;
 static void fuzz(uint32_t seed, uint32_t total_ms, bool has_big) {
     fz = seed;
     world.has_big = has_big;
+    world.codex = true;
     fresh_director();
     director_set_liveliness(fuzz_level);
     float pct = 10;
@@ -130,7 +131,7 @@ static void fuzz(uint32_t seed, uint32_t total_ms, bool has_big) {
         t += gap;
         UsageData d = live_payload();
         SignalsUpdate sig = no_signal();
-        switch (fz_next() % 16) {
+        switch (fz_next() % 17) {
         case 0: case 1:  world.activity = (int)fz_range(0, 3); break;
         case 2:          world.activity = 3; break;
         case 3: case 4:  sig.event_fired = true; sig.event = "psb"[fz_next() % 3]; sig.event_seq = ++es; break;
@@ -147,6 +148,10 @@ static void fuzz(uint32_t seed, uint32_t total_ms, bool has_big) {
             continue;
         }
         case 14:         director_set_liveliness((int)fz_range(1, 5)); continue;
+        case 15:
+            if (fz_next() % 2) world.codex = !world.codex;   // the app starts / stops sending Codex
+            else               director_page_button();       // a button set to "page"
+            continue;
         default:         break;                   // a quiet stretch
         }
         d.session_pct = pct;
@@ -158,12 +163,46 @@ static void fuzz(uint32_t seed, uint32_t total_ms, bool has_big) {
     director_alert_clear();
     world.meters_live = true;
     world.activity = 0;
+    world.codex = false;                          // no Codex numbers: the page turns back for good
     run_for(3 * 60 * 1000);
     assert_one_clawd();
     const char* b = director_beat_name();
     char msg[64];
     snprintf(msg, sizeof(msg), "seed %lu stuck in %s", (unsigned long)seed, b);
     TEST_ASSERT_TRUE_MESSAGE(strcmp(b, "home") == 0 || strcmp(b, "screensaver") == 0, msg);
+}
+
+// The Codex page: every CODEX_PAGE_MS he walks off, the cloud hops into his
+// seat, and back. An alert on the Codex page sends the cloud off and he
+// comes back to fetch you.
+static void test_codex_page_turns_and_yields_to_attention(void) {
+    world.codex = true;
+    fresh_director();
+    director_set_liveliness(1);                   // no idle acts: the timing is the page's
+    page_since = fake_now_ms;
+    run_for(CODEX_PAGE_MS + 4000);
+    TEST_ASSERT_EQUAL_STRING("codex", director_beat_name());
+    TEST_ASSERT_TRUE(ui_codex_page());
+    TEST_ASSERT_TRUE(codex_sprite_visible());
+    run_for(CODEX_PAGE_MS + 6000);                // and back to Claude's page
+    TEST_ASSERT_FALSE(ui_codex_page());
+    TEST_ASSERT_FALSE(codex_sprite_visible());
+    TEST_ASSERT_TRUE(fake_corner_seated_still());
+    director_page_button();                       // a "page" button turns it now
+    run_for(4000);
+    TEST_ASSERT_EQUAL_STRING("codex", director_beat_name());
+    director_alert("needs you");
+    run_for(4000);
+    TEST_ASSERT_EQUAL_STRING("attention", director_beat_name());
+    TEST_ASSERT_FALSE(ui_codex_page());
+    TEST_ASSERT_FALSE(codex_sprite_visible());
+    director_tap(100);
+    world.codex = false;                          // Codex numbers stop: no more Codex page
+    run_for(2 * CODEX_PAGE_MS);
+    TEST_ASSERT_EQUAL_STRING("home", director_beat_name());
+    TEST_ASSERT_FALSE(ui_codex_page());
+    assert_one_clawd();
+    director_set_liveliness(CLAWD_LIVELINESS_DEFAULT);
 }
 
 static void test_fuzz_one_clawd_with_full_size_sprite(void) {
@@ -337,6 +376,7 @@ static void test_fuzz_one_clawd_at_every_attention_animation(void) {
 int main(int, char**) {
     UNITY_BEGIN();
     RUN_TEST(test_screensaver_calm_dip_keeps_one_clawd);
+    RUN_TEST(test_codex_page_turns_and_yields_to_attention);
     RUN_TEST(test_fuzz_one_clawd_with_full_size_sprite);
     RUN_TEST(test_fuzz_one_clawd_without_full_size_sprite);
     RUN_TEST(test_no_nonsense_sits_still_through_everything_but_taps);

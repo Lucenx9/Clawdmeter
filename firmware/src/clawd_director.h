@@ -43,6 +43,10 @@ void director_tap(int x);
 // being here and dismisses an alert, but Clawd doesn't peek, so the hint
 // stays in view for the hold.
 void director_set_pairing_touch(bool on);
+// A button set to "page" (button_action.h BTN_ACT_PAGE): turn to the other
+// page (Claude's or Codex's meters) now. The pages also turn by themselves
+// every CODEX_PAGE_MS while the app sends Codex numbers.
+void director_page_button(void);
 // A physical button press: you're here. `main_button` is BOOT, or the PWR
 // key on a board whose only button it is. On a board without a touchscreen
 // that press first dismisses an active alert and returns true (the caller
@@ -67,7 +71,7 @@ const char*  director_beat_name(void);
 
 // QA hook for the `clawd <beat>` serial command: start a beat now so it can
 // be captured with `screenshot` on hardware. beat = show | screensaver |
-// attention | joy | lurk | peek [x] | home. Returns false for an unknown
+// attention | joy | lurk | peek [x] | home | codex. Returns false for an unknown
 // name, or for show / screensaver / lurk / peek while another beat is still
 // running (lurk also needs the full-size sprite, i.e. PSRAM). `peek` is a tap
 // on the meters at x (default: three quarters across).

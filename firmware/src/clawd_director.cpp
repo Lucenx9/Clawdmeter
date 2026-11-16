@@ -2,6 +2,7 @@
 #include "clawd_policy.h"
 #include "clawd_anim.h"
 #include "mascot.h"
+#include "codex_sprite.h"
 #include "performer.h"
 #include "face.h"
 #include "ui.h"
@@ -29,10 +30,20 @@ enum Beat {
     B_RUN_HOME,      // the performance stops, he runs off, the corner walks home
     B_ATTENTION,     // the big Clawd fetches you
     B_PEEK,          // a tap on the meters: hop, duck out, the face comes up curious for a while
+    B_CODEX_IN,      // he walks off, the meters turn to Codex, its cloud hops into his seat
+    B_CODEX,         // the Codex page: the cloud idles in his seat
+    B_CODEX_OUT,     // the cloud hops off, the meters turn back, he walks home
 };
 static const char* const BEAT_NAMES[] = {
     "home", "corner", "show", "screensaver", "face-home", "run-home", "attention", "peek",
+    "codex-in", "codex", "codex-out",
 };
+
+// Each page (Claude's, Codex's) stays this long before the other one turns
+// up, while the app sends Codex numbers; a button set to "page" turns it now.
+#define CODEX_PAGE_MS 10000
+static uint32_t page_since = 0;
+static bool     page_request = false;
 
 static Beat     beat = B_HOME;
 static uint8_t  step = 0;
@@ -199,6 +210,9 @@ void director_alert(const char* message) {
     if (attention_on) return;                 // refresh text + timers only
     attention_on = true;
     if (beat == B_ATTENTION) { step = 0; return; }
+    // The Codex page hands back first (the cloud leaves, he comes home and
+    // fetches you): run_codex sees attention_on.
+    if (beat == B_CODEX || beat == B_CODEX_OUT) return;
     // Attention never waits: interrupt whatever is on.
     if (face_visible() || performing) {
         face_set_resting(false);
@@ -254,6 +268,8 @@ void director_tap(int x) {
         tap_home(x);
         return;
     }
+    if (beat == B_CODEX) { codex_sprite_hop(); return; }        // tapping the cloud's aquarium
+    if (beat == B_CODEX_IN || beat == B_CODEX_OUT) return;       // mid-swap: absorbed
     if (beat == B_PEEK) {
         // The face is up (or coming up) looking at you: he blinks and drops
         // right away. Before it shows (hop, ducking out) the tap is
@@ -268,6 +284,11 @@ void director_tap(int x) {
 }
 
 void director_set_pairing_touch(bool on) { pairing_touch = on; }
+
+void director_page_button(void) {
+    engage();
+    page_request = true;
+}
 
 bool director_button(bool main_button) {
     engage();
@@ -355,6 +376,10 @@ static void apply_minimal(bool on) {
     face_hide_now();
     performer_place_offstage(PERFORMER_LEFT);
     performing = false;
+    codex_sprite_show_now(false);
+    codex_sprite_set_minimal(on);
+    ui_show_codex_page(false);
+    page_since = now_ms();
     mascot_set_minimal(on);
     // An alert that's still up stays in its beat, so its timeout and the
     // dismissing tap keep working across the switch.
@@ -627,6 +652,60 @@ static void run_peek(uint32_t now) {
     }
 }
 
+// ─── The Codex page ──────────────────────────────────────────────────────────
+// One creature at a time: he walks off through the left edge, the meters
+// turn to Codex while nobody's in the seat, and the cloud hops in. On the
+// way back the cloud hops off first and he walks home (arrive_meters, so a
+// waiting alert gets him straight away).
+static void run_codex_in(uint32_t now) {
+    switch (step) {
+    case 0:
+        if (mascot_acting()) return;              // an idle act finishes first
+        if (!mascot_away()) mascot_leave(200);
+        next_step();
+        break;
+    default:
+        if (!mascot_away()) return;
+        ui_show_codex_page(true);
+        codex_sprite_enter();
+        page_since = now;
+        go(B_CODEX);
+        break;
+    }
+}
+
+static void run_codex(uint32_t now) {
+    if (idle_is_asleep() && !attention_on) return;   // nobody's looking: hold the page
+    const bool leave = attention_on || page_request || !ui_codex_available() || !ui_meters_live()
+                    || (uint32_t)(now - page_since) >= CODEX_PAGE_MS;
+    if (!leave) return;
+    page_request = false;
+    if (minimal) {
+        codex_sprite_show_now(false);
+        ui_show_codex_page(false);
+        mascot_reset();
+        page_since = now;
+        go(attention_on ? B_ATTENTION : B_HOME);
+        return;
+    }
+    go(B_CODEX_OUT);
+}
+
+static void run_codex_out(uint32_t now) {
+    switch (step) {
+    case 0:
+        codex_sprite_leave();
+        next_step();
+        break;
+    default:
+        if (codex_sprite_visible()) return;
+        ui_show_codex_page(false);
+        page_since = now;
+        arrive_meters();
+        break;
+    }
+}
+
 static void run_corner(uint32_t now) {
     if (react_anim) {
         if (!reaction_still_due(react_at, now, &clawd_tuning())) {
@@ -641,9 +720,31 @@ static void run_corner(uint32_t now) {
     if (settled(now)) go(B_HOME);
 }
 
+// Time for the other page (or a button asked for it), with Codex numbers
+// to show and the meters live. A request with nothing to show is dropped.
+static bool codex_page_due(uint32_t now) {
+    if (attention_on || !ui_codex_available() || !ui_meters_live()) {
+        page_request = false;
+        return false;
+    }
+    return page_request || (uint32_t)(now - page_since) >= CODEX_PAGE_MS;
+}
+
 static void run_home(uint32_t now) {
-    if (minimal) return;
     if (idle_is_asleep()) return;                 // nobody's looking
+    if (codex_page_due(now)) {
+        page_request = false;
+        if (minimal) {                            // a still swap: nothing moves in minimal mode
+            mascot_place_away();
+            codex_sprite_show_now(true);
+            ui_show_codex_page(true);
+            page_since = now;
+            go(B_CODEX);
+            return;
+        }
+        if (mascot_free() || mascot_away()) { go(B_CODEX_IN); return; }
+    }
+    if (minimal) return;
     if (joy_pending) {
         if ((uint32_t)(now - joy_at) > clawd_tuning().joy_pending_ms) joy_pending = false;
         else if (mascot_act("jumping happy", 2)) { joy_pending = false; go(B_CORNER); return; }
@@ -672,6 +773,9 @@ void director_tick(void) {
     case B_RUN_HOME:    run_run_home(now); break;
     case B_ATTENTION:   run_attention(now); break;
     case B_PEEK:        run_peek(now); break;
+    case B_CODEX_IN:    run_codex_in(now); break;
+    case B_CODEX:       run_codex(now); break;
+    case B_CODEX_OUT:   run_codex_out(now); break;
     }
 }
 
@@ -686,6 +790,11 @@ bool director_debug(const char* name) {
         return true;
     }
     if (strcmp(name, "attention") == 0)   { director_alert("Clawdmeter test alert"); return true; }
+    if (strcmp(name, "codex") == 0) {     // turn the page now (Claude <-> Codex)
+        if (!ui_codex_available()) return false;
+        director_page_button();
+        return true;
+    }
     if (minimal) return true;             // nothing else exists in minimal mode
     if (strcmp(name, "joy") == 0) {
         joy_pending = true;
