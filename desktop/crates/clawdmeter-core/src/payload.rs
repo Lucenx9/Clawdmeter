@@ -124,12 +124,21 @@ pub struct Payload {
     /// Minutes until `ow` resets; -1 = unknown.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub owr: Option<i64>,
+    /// 1 = the alert in `m` is Codex's: the device shows it on the Codex page.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ax: Option<u8>,
+    /// Latest Codex hook event: "p" prompt, "s" stop.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub oe: Option<String>,
+    /// Sequence number of `oe`, so the device reacts once.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub oes: Option<u32>,
 }
 
 /// Every key [`Payload`] can emit, in serialization order.
 pub const PAYLOAD_KEYS: &[&str] = &[
     "s", "sr", "w", "wr", "st", "acct", "tp", "pd", "rd", "t", "tf", "c", "ok", "b", "m", "x", "a", "e", "es", "n",
-    "rp", "lv", "aa", "pm", "k1", "k2", "k3", "th", "os", "osr", "ow", "owr",
+    "rp", "lv", "aa", "pm", "k1", "k2", "k3", "th", "os", "osr", "ow", "owr", "ax", "oe", "oes",
 ];
 /// The fast-clock keys added in v0.4 (old firmware ignores them).
 pub const ADDITIVE_KEYS: &[&str] = &["a", "e", "es", "n", "rp"];
@@ -585,6 +594,9 @@ mod tests {
             osr: Some(300),
             ow: Some(100),
             owr: Some(10_080),
+            ax: Some(1),
+            oe: Some("p".into()),
+            oes: Some(u32::MAX),
         };
         let json = pl.to_json();
         assert!(json.len() < 500, "{} bytes: {json}", json.len());
@@ -626,6 +638,9 @@ mod tests {
             osr: Some(2),
             ow: Some(3),
             owr: Some(4),
+            ax: Some(1),
+            oe: Some("s".into()),
+            oes: Some(5),
         };
         let v: serde_json::Map<String, serde_json::Value> = serde_json::from_str(&pl.to_json()).unwrap();
         // serde_json's Map is sorted without preserve_order; check membership.

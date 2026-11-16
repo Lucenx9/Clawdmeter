@@ -44,6 +44,7 @@ static const char* const BEAT_NAMES[] = {
 #define CODEX_PAGE_MS 10000
 static uint32_t page_since = 0;
 static bool     page_request = false;
+static bool     attention_codex = false;   // the alert is Codex's: the cloud fetches you on its page
 
 static Beat     beat = B_HOME;
 static uint8_t  step = 0;
@@ -124,7 +125,7 @@ static void perform_enter(uint16_t speed_pct) {
 // waiting; an alert that ended mid-transition with nobody around puts the
 // screensaver back; otherwise he walks back to his seat from the left.
 static void arrive_meters(void) {
-    if (attention_on) { go(B_ATTENTION); return; }
+    if (attention_on) { go(attention_codex ? B_CODEX_IN : B_ATTENTION); return; }
     if (resume_screensaver) {
         resume_screensaver = false;
         if (!minimal && ui_meters_live()) { go(B_SCREENSAVER); return; }
@@ -178,8 +179,18 @@ static void end_attention(AttnEnd how) {
     attention_on = false;
     if (attention_end_tells_host(how)) attention_dismissed = true;
     const bool engaged = attn_engaged || (int32_t)(last_engagement - attn_mark) > 0;
-    resume_screensaver = attention_resumes_screensaver(attn_from, how, engaged);
     ui_set_alert_text(NULL);
+    if (attention_codex) {
+        // The cloud's alert: it goes back to idling on its page, which then
+        // runs its usual time. Clawd was never fetched, so he stays out.
+        attention_codex = false;
+        codex_sprite_alert(false);
+        resume_screensaver = false;
+        page_since = now_ms();
+        Serial.printf("[%lu] director: codex attention over\n", (unsigned long)now_ms());
+        return;
+    }
+    resume_screensaver = attention_resumes_screensaver(attn_from, how, engaged);
     mascot_attention(false, !resume_screensaver);
     Serial.printf("[%lu] director: attention over (%s)%s\n", (unsigned long)now_ms(),
                   how == ATTN_END_TAP ? "tap" : how == ATTN_END_CLEAR ? "cleared" : "timeout",
@@ -187,7 +198,14 @@ static void end_attention(AttnEnd how) {
     if (beat == B_ATTENTION && step == 0) next_step();
 }
 
-void director_alert(const char* message) {
+void director_alert(const char* message, bool codex) {
+    if (attention_on && attention_codex && !codex) {
+        // Claude needs you too: Clawd takes over from the cloud (on the
+        // Codex page run_codex hands back, and arrive_meters fetches him).
+        attention_codex = false;
+        codex_sprite_alert(false);
+    }
+    if (!attention_on) attention_codex = codex;
     if (!attention_on) {
         // Remember what it interrupts, so it can return there. A new alert
         // while the last one is still leaving for the screensaver inherits
@@ -210,6 +228,22 @@ void director_alert(const char* message) {
     if (attention_on) return;                 // refresh text + timers only
     attention_on = true;
     if (beat == B_ATTENTION) { step = 0; return; }
+    if (attention_codex) {
+        // Codex's alert lives on the Codex page: from wherever we are, the
+        // fastest no-cut way there (the face drops / the show stops first,
+        // then arrive_meters routes to codex-in).
+        if (beat == B_CODEX)                         codex_sprite_alert(true);
+        else if (beat == B_CODEX_IN || beat == B_CODEX_OUT) { /* routes itself */ }
+        else if (face_visible() || performing) {
+            face_set_resting(false);
+            notice_wake = false;
+            go(face_visible() ? B_FACE_HOME : B_RUN_HOME);
+        } else {
+            react_anim = NULL;
+            go(B_CODEX_IN);
+        }
+        return;
+    }
     // The Codex page hands back first (the cloud leaves, he comes home and
     // fetches you): run_codex sees attention_on.
     if (beat == B_CODEX || beat == B_CODEX_OUT) return;
@@ -284,6 +318,13 @@ void director_tap(int x) {
 }
 
 void director_set_pairing_touch(bool on) { pairing_touch = on; }
+
+void director_codex_event(char event) {
+    engage();
+    if (minimal) return;
+    if (event == 'p' && beat == B_SCREENSAVER) { to_meters(true); return; }   // you're back
+    if (beat == B_CODEX && !attention_on) codex_sprite_react(event);
+}
 
 void director_page_button(void) {
     engage();
@@ -378,6 +419,10 @@ static void apply_minimal(bool on) {
     performing = false;
     codex_sprite_show_now(false);
     codex_sprite_set_minimal(on);
+    if (attention_codex) {           // the page is gone: Clawd carries the alert now
+        attention_codex = false;
+        codex_sprite_alert(false);
+    }
     ui_show_codex_page(false);
     page_since = now_ms();
     mascot_set_minimal(on);
@@ -658,6 +703,15 @@ static void run_peek(uint32_t now) {
 // way back the cloud hops off first and he walks home (arrive_meters, so a
 // waiting alert gets him straight away).
 static void run_codex_in(uint32_t now) {
+    if (minimal) {
+        mascot_place_away();
+        codex_sprite_show_now(true);
+        ui_show_codex_page(true);
+        codex_sprite_alert(attention_on && attention_codex);
+        page_since = now;
+        go(B_CODEX);
+        return;
+    }
     switch (step) {
     case 0:
         if (mascot_acting()) return;              // an idle act finishes first
@@ -667,6 +721,7 @@ static void run_codex_in(uint32_t now) {
     default:
         if (!mascot_away()) return;
         ui_show_codex_page(true);
+        codex_sprite_alert(attention_on && attention_codex);
         codex_sprite_enter();
         page_since = now;
         go(B_CODEX);
@@ -675,6 +730,15 @@ static void run_codex_in(uint32_t now) {
 }
 
 static void run_codex(uint32_t now) {
+    if (attention_on && attention_codex) {
+        // Codex's alert: the cloud keeps at it for the attention animation's
+        // time, then idles; the page stays until a tap, a clear or the timeout.
+        codex_sprite_alert(attn_anim_running(now));
+        page_request = false;
+        if ((uint32_t)(now - attention_since) >= clawd_tuning().alert_timeout_ms)
+            end_attention(ATTN_END_TIMEOUT);
+        return;
+    }
     if (idle_is_asleep() && !attention_on) return;   // nobody's looking: hold the page
     const bool leave = attention_on || page_request || !ui_codex_available() || !ui_meters_live()
                     || (uint32_t)(now - page_since) >= CODEX_PAGE_MS;
@@ -685,7 +749,7 @@ static void run_codex(uint32_t now) {
         ui_show_codex_page(false);
         mascot_reset();
         page_since = now;
-        go(attention_on ? B_ATTENTION : B_HOME);
+        go(attention_on ? B_ATTENTION : B_HOME);   // a Codex alert never leaves (above)
         return;
     }
     go(B_CODEX_OUT);

@@ -747,3 +747,91 @@ mod tests {
         let _ = fs::remove_dir_all(&dir);
     }
 }
+
+// ─── OpenAI Codex ────────────────────────────────────────────────────────────
+
+/// The Codex hook events Clawdmeter follows (`clawdmeter hook codex`).
+pub const CODEX_EVENTS: &[&str] = &["UserPromptSubmit", "PostToolUse", "Stop", "PermissionRequest", "Interrupt"];
+
+/// Whether a Codex hook command is ours: `<exe> hook codex`.
+fn codex_ours(cmd: &str) -> bool {
+    cmd.trim_end().ends_with(" hook codex") && cmd.contains("clawdmeter")
+}
+
+/// `hooks.json` with Clawdmeter's Codex hooks in (one group per event, its
+/// command updated to `exe`), every other hook left as it was.
+pub fn merge_codex(text: Option<&str>, exe: &Path) -> Result<String, HookError> {
+    let mut root: serde_json::Value = match text.map(str::trim).filter(|t| !t.is_empty()) {
+        Some(t) => serde_json::from_str(t).map_err(|e| HookError::Parse(e.to_string()))?,
+        None => serde_json::json!({}),
+    };
+    let obj = root.as_object_mut().ok_or_else(|| HookError::Parse("hooks.json is not an object".into()))?;
+    let hooks = obj.entry("hooks").or_insert_with(|| serde_json::json!({}));
+    let hooks = hooks.as_object_mut().ok_or_else(|| HookError::Parse("\"hooks\" is not an object".into()))?;
+    let cmd = hook_command(exe, "codex");
+    for event in CODEX_EVENTS {
+        let groups = hooks.entry(*event).or_insert_with(|| serde_json::json!([]));
+        let groups = groups.as_array_mut().ok_or_else(|| HookError::Parse(format!("\"{event}\" is not a list")))?;
+        // Drop our old entries (a moved binary), keep everyone else's.
+        for g in groups.iter_mut() {
+            if let Some(list) = g.get_mut("hooks").and_then(|h| h.as_array_mut()) {
+                list.retain(|h| !h.get("command").and_then(|c| c.as_str()).is_some_and(codex_ours));
+            }
+        }
+        groups.retain(|g| g.get("hooks").and_then(|h| h.as_array()).is_none_or(|l| !l.is_empty()));
+        groups.push(serde_json::json!({
+            "matcher": "",
+            "hooks": [{ "type": "command", "command": cmd, "timeout": 5 }],
+        }));
+    }
+    Ok(serde_json::to_string_pretty(&root).map_err(|e| HookError::Parse(e.to_string()))? + "\n")
+}
+
+/// Install (or update) the Codex hooks in `<codex home>/hooks.json`. The file
+/// from before Clawdmeter is kept once as `hooks.json.bak`. Returns whether
+/// the file changed. Codex asks to trust new or changed hooks the next time
+/// it starts.
+pub fn install_codex(codex_home: &Path, exe: &Path) -> Result<bool, HookError> {
+    let path = codex_home.join("hooks.json");
+    let before = read_opt(&path)?;
+    let after = merge_codex(before.as_deref(), exe)?;
+    if before.as_deref() == Some(after.as_str()) {
+        return Ok(false);
+    }
+    fs::create_dir_all(codex_home)?;
+    let bak = path.with_extension("json.bak");
+    if let (Some(b), false) = (&before, bak.exists()) {
+        fs::write(&bak, b)?;
+    }
+    let tmp = path.with_extension("json.tmp");
+    fs::write(&tmp, &after)?;
+    fs::rename(&tmp, &path)?;
+    Ok(true)
+}
+
+#[cfg(test)]
+mod codex_tests {
+    use super::*;
+
+    #[test]
+    fn merges_beside_other_hooks_and_updates_its_own() {
+        let theirs = r#"{"hooks":{"Stop":[{"hooks":[{"command":"signaltty hook-event --agent codex","type":"command"}],"matcher":""}]}}"#;
+        let a = merge_codex(Some(theirs), Path::new("/usr/bin/clawdmeter")).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&a).unwrap();
+        let stop = v["hooks"]["Stop"].as_array().unwrap();
+        assert_eq!(stop.len(), 2, "theirs kept, ours added");
+        assert_eq!(stop[1]["hooks"][0]["command"], "/usr/bin/clawdmeter hook codex");
+        for e in CODEX_EVENTS {
+            assert!(v["hooks"][e].is_array(), "{e}");
+        }
+        // Moving the binary replaces our entry instead of adding a second one.
+        let b = merge_codex(Some(&a), Path::new("/opt/clawdmeter")).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&b).unwrap();
+        let stop = v["hooks"]["Stop"].as_array().unwrap();
+        assert_eq!(stop.len(), 2);
+        assert_eq!(stop[1]["hooks"][0]["command"], "/opt/clawdmeter hook codex");
+        assert_eq!(merge_codex(Some(&b), Path::new("/opt/clawdmeter")).unwrap(), b, "idempotent");
+        assert!(merge_codex(Some("[1]"), Path::new("/x")).is_err());
+        assert!(merge_codex(None, Path::new("/x")).unwrap().contains("PermissionRequest"));
+    }
+}

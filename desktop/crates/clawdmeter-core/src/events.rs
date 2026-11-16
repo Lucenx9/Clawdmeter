@@ -23,13 +23,51 @@ pub enum HookKind {
     Notification,
     /// `PreToolUse` (the hook only fires it for AskUserQuestion).
     PreToolUse,
+    /// An OpenAI Codex hook (`codex.<HookEventName>` in events.log): its
+    /// own fast clock for the Codex page, never Claude's activity.
+    Codex(CodexHook),
     /// Anything else, kept for forward compatibility.
     Other(String),
 }
 
+/// The Codex hook events the device reacts to.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum CodexHook {
+    /// `UserPromptSubmit`.
+    Prompt,
+    /// `Stop`: the turn is done.
+    Stop,
+    /// `PermissionRequest`: Codex needs the user.
+    Permission,
+    /// Any other Codex event (tool use, session start, ...).
+    Other,
+}
+
+impl CodexHook {
+    /// The payload's `oe` letter, when the device reacts to it.
+    pub fn code(self) -> Option<&'static str> {
+        match self {
+            CodexHook::Prompt => Some("p"),
+            CodexHook::Stop => Some("s"),
+            CodexHook::Permission | CodexHook::Other => None,
+        }
+    }
+}
+
+/// events.log's prefix for Codex events.
+pub const CODEX_PREFIX: &str = "codex.";
+
 impl HookKind {
     /// Parse a hook event name.
     pub fn parse(s: &str) -> Self {
+        if let Some(name) = s.strip_prefix(CODEX_PREFIX) {
+            return HookKind::Codex(match name {
+                "UserPromptSubmit" => CodexHook::Prompt,
+                "Stop" => CodexHook::Stop,
+                "PermissionRequest" => CodexHook::Permission,
+                _ => CodexHook::Other,
+            });
+        }
         match s {
             "UserPromptSubmit" => HookKind::UserPromptSubmit,
             "PostToolUse" => HookKind::PostToolUse,
@@ -43,6 +81,8 @@ impl HookKind {
     /// prompt, a tool call, the end of a turn. That starts a 5-hour window
     /// when none is running.
     pub fn sends_messages(&self) -> bool {
+        // Codex's own events never count as Claude activity (HookKind::Codex
+        // isn't listed).
         matches!(self, HookKind::UserPromptSubmit | HookKind::PostToolUse | HookKind::PreToolUse | HookKind::Stop)
     }
 }

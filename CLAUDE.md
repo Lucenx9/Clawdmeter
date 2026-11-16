@@ -97,7 +97,10 @@ The app writes one complete JSON object per write to RX
 - Codex page: `os osr ow owr` (OpenAI Codex's 5-hour and weekly % and
   minutes to reset, each pair absent when Codex's plan lacks that window;
   none = no Codex page). The meters alternate Claude / Codex every 10 s
-  (`UI_PAGE_MS`), or on a button set to preset `7` (`page`).
+  (`CODEX_PAGE_MS`, the director's codex beats), or on a button set to preset
+  `7` (`page`). Codex hooks (`clawdmeter hook codex`, installed in
+  `~/.codex/hooks.json` by `clawdmeter --install-codex-hooks`): `ax` marks a
+  Codex alert, `oe`/`oes` its prompt/stop events.
 - Attention: `b` (alert chime), `m` (ASCII message), `x` (clear).
 - Fast clock: `a` (activity 0–3), `e` + `es` (event `p`/`s`/`b` and its
   sequence), `n` (active sessions). `rp:1` marks the usage numbers as a replay

@@ -24,7 +24,7 @@ static const uint8_t  HOP_CELLS    = 6;     // a hop in the seat
 static int headroom_cells(int want);
 static const uint8_t  STRIDE_CELLS = 12;    // ground covered per travel hop
 
-enum Mode { CM_AWAY, CM_TRAVEL, CM_SEATED, CM_HOP, CM_NUDGE, CM_THINK };
+enum Mode { CM_AWAY, CM_TRAVEL, CM_SEATED, CM_HOP, CM_NUDGE, CM_THINK, CM_ALERT };
 enum Act { ACT_HOP, ACT_NUDGE, ACT_THINK, ACT_COUNT };
 
 static lv_obj_t*      img = NULL;
@@ -40,6 +40,7 @@ static int      from_x = 0, to_x = 0;
 static uint8_t  hops = 1;
 static bool     leaving = false;
 static bool     minimal = false;
+static bool     alerting = false;   // Codex needs you: the alert loop whenever it's seated
 static uint32_t seated_since = 0;
 static uint32_t idle_gap = 5000;
 static int      last_act = -1;
@@ -143,6 +144,13 @@ static void hop_look(float t, int height, Look* l) {
 
 // ─── Modes ───────────────────────────────────────────────────────────────────
 static void seat(void) {
+    if (alerting && !minimal) {
+        mode = CM_ALERT;
+        x = slot_x;
+        started = now_ms();
+        set_visible(true);
+        return;
+    }
     mode = CM_SEATED;
     x = slot_x;
     seated_since = now_ms();
@@ -205,10 +213,25 @@ void codex_sprite_show_now(bool on) {
     }
 }
 
+static bool idle_now(void) { return mode == CM_SEATED || mode == CM_NUDGE || mode == CM_THINK; }
+
 void codex_sprite_hop(void) {
-    if (minimal || (mode != CM_SEATED && mode != CM_NUDGE && mode != CM_THINK)) return;
+    if (minimal || !idle_now()) return;
     mode = CM_HOP;
     started = now_ms();
+}
+
+void codex_sprite_react(char event) {
+    if (minimal || !idle_now()) return;
+    if (event == 's') { codex_sprite_hop(); return; }
+    if (event == 'p') { mode = CM_THINK; started = now_ms(); }
+}
+
+void codex_sprite_alert(bool on) {
+    if (on == alerting) return;
+    alerting = on;
+    if (on && idle_now()) seat();                 // straight into the alert loop
+    else if (!on && mode == CM_ALERT) seat();     // back to idling
 }
 
 bool codex_sprite_visible(void) { return img && mode != CM_AWAY; }
@@ -267,6 +290,12 @@ void codex_sprite_tick(void) {
         if (el >= 1800) { seat(); break; }
         l.dots = (uint8_t)(1 + (el / 300) % 3);
         break;
+    case CM_ALERT: {  // "over here": a hop, then the prompt leans at you, again and again
+        const uint32_t t = el % 1500;
+        if (t < HOP_MS) hop_look((float)t / HOP_MS, headroom_cells(HOP_CELLS), &l);
+        else if (t < 1100) l.nudge = ((t - HOP_MS) / 120) % 2 == 0 ? 1 : 0;
+        break;
+    }
     case CM_SEATED:
         if (!minimal && now - seated_since >= idle_gap) { start_act(); return; }
         break;

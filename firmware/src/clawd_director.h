@@ -30,7 +30,11 @@ void director_tick(void);
 
 // Per parsed payload, after signals_ingest().
 void director_on_payload(const UsageData* d, const SignalsUpdate* sig);
-void director_alert(const char* message);   // attention hook fired
+// Attention hook fired. `codex`: it's OpenAI Codex asking (the Codex page
+// shows it, its cloud fetches you instead of Clawd).
+void director_alert(const char* message, bool codex = false);
+// A Codex hook event ('p' prompt, 's' stop): the cloud reacts if it's up.
+void director_codex_event(char event);
 void director_alert_clear(void);            // the session moved on
 bool director_take_dismissed(void);         // an alert ended on the device since the last call
 

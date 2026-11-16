@@ -28,6 +28,7 @@ OPTIONS:
                       flash, accounts, hooks, settings or setup
       [--manifest P]  flash page: use a local release manifest.json instead of GitHub
     --once            Poll /usage for every account once, print the payload, exit (no BLE)
+    --install-codex-hooks  Add Clawdmeter to OpenAI Codex's hooks ($CODEX_HOME/hooks.json)
     --ports           List attached Espressif USB ports
     --info PORT       Ask the firmware on PORT for its env/version
     hook MODE [event] Claude Code hook (MODE: alert, clear or event); reads the
@@ -85,6 +86,26 @@ fn main() {
             }
         }
         "--once" => daemon::once(&paths),
+        "--install-codex-hooks" => {
+            let codex = clawdmeter_core::codex::codex_home(&paths.home, std::env::var("CODEX_HOME").ok().as_deref());
+            let result = clawdmeter_app::hooks::install::hook_binary(&paths.state_dir)
+                .map_err(clawdmeter_app::hooks::install::HookError::from)
+                .and_then(|exe| clawdmeter_app::hooks::install::install_codex(&codex, &exe));
+            match result {
+                Ok(changed) => {
+                    println!(
+                        "{}: Clawdmeter's Codex hooks {}. Codex asks to trust them the next time it starts.",
+                        codex.join("hooks.json").display(),
+                        if changed { "installed" } else { "already up to date" }
+                    );
+                    0
+                }
+                Err(e) => {
+                    eprintln!("{e}");
+                    1
+                }
+            }
+        }
         "--ports" => {
             for p in clawdmeter_flash::device::list_ports() {
                 println!("{}  {:04x}:{:04x}  {}", p.path, p.vid, p.pid, p.serial_number.unwrap_or_default());

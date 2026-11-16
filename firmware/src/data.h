@@ -48,6 +48,10 @@ struct UsageData {
     int      codex_session_reset_mins; // `osr` minutes until it resets, -1 unknown
     int16_t  codex_weekly_pct;         // `ow`  Codex weekly window % used
     int      codex_weekly_reset_mins;  // `owr` minutes until it resets, -1 unknown
+    bool     alert_codex;              // `ax`  the alert in alert_msg is Codex's
+    char     codex_event;              // `oe`  latest Codex hook event: 'p' prompt, 's' stop; '\0' absent
+    bool     has_codex_event_seq;      // `oes` present
+    uint32_t codex_event_seq;          // `oes` its sequence number; react once per change
     bool     has_theme;      // `th` present and well-formed
     uint32_t theme[TH_COUNT];// `th` the palette, 0xRRGGBB per token (theme_palette.h)
     bool ok;                 // data parse succeeded

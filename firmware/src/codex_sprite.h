@@ -20,6 +20,10 @@ void codex_sprite_enter(void);       // hop in from the left edge to the seat
 void codex_sprite_leave(void);       // hop out through the left edge
 void codex_sprite_show_now(bool on); // in the seat (or gone) at once: minimal mode, resets
 void codex_sprite_hop(void);         // a hop in the seat (a tap on the meters)
+// A Codex hook event: 'p' (a prompt) it types, three dots; 's' (done) a hop.
+void codex_sprite_react(char event);
+// Codex needs you: it hops and leans its prompt at you until `off`.
+void codex_sprite_alert(bool on);
 
 bool codex_sprite_visible(void);     // any part of it on screen
 bool codex_sprite_busy(void);        // entering, leaving or hopping

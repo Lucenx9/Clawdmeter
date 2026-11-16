@@ -13,7 +13,7 @@ use crate::backoff::SavedBlock;
 use crate::cadence::{heartbeat_due, AccountClock, Cadence, PollReason, Scheduler};
 use crate::codex::{CodexReading, CodexState};
 use crate::config::{ButtonAction, Palette, Settings};
-use crate::events::{Activity, HookEvent, Signal};
+use crate::events::{Activity, CodexHook, HookEvent, HookKind, Signal};
 use crate::payload::{clock_fields, Payload};
 use crate::platform::Appearance;
 use crate::probe::{self, Plan as ProbePlan, Source};
@@ -170,6 +170,12 @@ pub struct Engine {
     codex: CodexState,
     /// Codex's percentages the device last got (`os`, `ow`).
     sent_codex: Option<(Option<u32>, Option<u32>)>,
+    /// Codex's hook events the device reacts to (`oe`/`oes`): the latest,
+    /// its sequence number, when it came, and the number last sent.
+    codex_event: Option<CodexHook>,
+    codex_seq: u32,
+    codex_event_ts: Option<i64>,
+    sent_codex_seq: u32,
 }
 
 fn utc(now: i64) -> DateTime<Utc> {
@@ -211,6 +217,10 @@ impl Engine {
             desktop_chime_due: false,
             codex: CodexState::default(),
             sent_codex: None,
+            codex_event: None,
+            codex_seq: 0,
+            codex_event_ts: None,
+            sent_codex_seq: 0,
         }
     }
 
@@ -250,11 +260,22 @@ impl Engine {
 
     /// History from events.log at start-up (no `e` is emitted for it).
     pub fn seed_events(&mut self, events: &[HookEvent]) {
-        self.activity.seed(events);
+        let claude: Vec<HookEvent> = events.iter().filter(|e| !matches!(e.kind, HookKind::Codex(_))).cloned().collect();
+        self.activity.seed(&claude);
     }
 
     /// One live hook event.
     pub fn on_hook_event(&mut self, ev: &HookEvent, now: i64) {
+        // Codex's hooks only drive the device's Codex page: they are not
+        // Claude activity (no poll, no `a`/`n`, no window to start).
+        if let HookKind::Codex(h) = ev.kind {
+            if h.code().is_some() {
+                self.codex_seq = self.codex_seq.wrapping_add(1);
+                self.codex_event = Some(h);
+                self.codex_event_ts = Some(now);
+            }
+            return;
+        }
         if ev.kind.sends_messages() {
             match ev.account.as_ref().and_then(|a| self.settings.config_dirs.iter().find(|d| *d == a)) {
                 Some(d) => self.accounts.entry(d.clone()).or_default().note_activity(ev.ts),
@@ -551,6 +572,8 @@ impl Engine {
             .as_ref()
             .map_or((None, None), |r| (r.session.as_ref().map(|w| w.pct), r.week.as_ref().map(|w| w.pct)));
         let codex_changed = self.sent_codex != Some(codex_pcts);
+        let codex_event_fresh = self.codex_event_ts.is_some_and(|t| now - t < EVENT_FRESH_SECS);
+        let codex_new_event = codex_event_fresh && self.codex_seq != self.sent_codex_seq;
         let prefs_changed = self.sent_lv != Some(self.settings.liveliness)
             || self.sent_aa != Some(aa)
             || self.sent_pm != Some(pm)
@@ -570,7 +593,9 @@ impl Engine {
                 WriteKind::Poll
             } else if self.attention.pending() {
                 WriteKind::Attention
-            } else if (new_event || a_changed || n_changed || prefs_changed || codex_changed) && !self.stale(now) {
+            } else if (new_event || a_changed || n_changed || prefs_changed || codex_changed || codex_new_event)
+                && !self.stale(now)
+            {
                 // Any ok payload refreshes the device's DATA_FRESH_MS, so
                 // while the numbers are stale only alerts and polls go out
                 // and the device can show its stale state.
@@ -610,6 +635,15 @@ impl Engine {
         if att.clear {
             payload.x = Some(1);
         }
+        if att.codex && payload.m.is_some() {
+            payload.ax = Some(1);
+        }
+        if codex_event_fresh && payload.ok {
+            if let Some(code) = self.codex_event.and_then(CodexHook::code) {
+                payload.oe = Some(code.to_owned());
+                payload.oes = Some(self.codex_seq);
+            }
+        }
         if hooks {
             payload.a = Some(level);
             payload.n = Some(sessions);
@@ -632,6 +666,9 @@ impl Engine {
         }
         if let Some(es) = w.payload.es {
             self.sent_seq = es;
+        }
+        if let Some(oes) = w.payload.oes {
+            self.sent_codex_seq = oes;
         }
         if let Some(a) = w.payload.a {
             if self.sent_a != Some(a) {
@@ -749,6 +786,31 @@ mod tests {
         let w = e.next_write(now, HostClock::default())?;
         e.mark_written(now, &w);
         Some(w)
+    }
+
+    #[test]
+    fn codex_hooks_drive_only_the_codex_fields() {
+        let mut e = Engine::new(settings(""));
+        e.on_poll_results(T0, vec![(PathBuf::from("/h/.claude"), Ok(reading(15)))]);
+        write(&mut e, T0).unwrap();
+        e.on_hook_event(&ev(T0 + 1, "codex.UserPromptSubmit"), T0 + 1);
+        let w = write(&mut e, T0 + 1).expect("a Codex prompt goes out at once");
+        assert_eq!(w.kind, WriteKind::Event);
+        assert_eq!((w.payload.oe.as_deref(), w.payload.oes), (Some("p"), Some(1)));
+        assert_eq!(w.payload.a, None, "not Claude activity: no hooks seen");
+        assert_eq!(w.payload.e, None);
+        assert!(write(&mut e, T0 + 2).is_none(), "sent once");
+        // A Codex permission request is an alert the device shows as Codex's.
+        let alert = Alert {
+            message: "exec_command".into(),
+            session: "cx".into(),
+            kind: AlertKind::Codex,
+            at: SystemTime::UNIX_EPOCH + Duration::from_secs((T0 + 3) as u64),
+        };
+        e.on_attention(Some(alert), &HashMap::new());
+        let w = write(&mut e, T0 + 3).unwrap();
+        assert_eq!((w.payload.m.as_deref(), w.payload.ax), (Some("Codex needs you!"), Some(1)));
+        assert_eq!(w.payload.oes, Some(1), "the event rides along while fresh");
     }
 
     #[test]

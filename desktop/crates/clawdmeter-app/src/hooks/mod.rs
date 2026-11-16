@@ -12,7 +12,13 @@
 //! * `event` appends `<unix_ts> <hook_event_name> <session_id>` to
 //!   `events.log`, rolling it to `events.log.1` past 256 KB.
 //!
-//! `alert event` / `clear event` do both from one read of stdin. Only the
+//! `alert event` / `clear event` do both from one read of stdin.
+//!
+//! `codex` is OpenAI Codex's hook (`~/.codex/hooks.json`, [`install::install_codex`]):
+//! it logs `<ts> codex.<HookEventName> <session_id>`, raises a Codex alert
+//! (`k: "codex"`) on `PermissionRequest`, and clears it on the session's next
+//! prompt, tool result, stop or interrupt. It prints nothing, so Codex
+//! decides permissions as usual. Only the
 //! event name and session id are recorded, never the prompt or the tool call.
 //! Hook stdout can reach the model, so the hook prints nothing and always
 //! exits 0. The file formats match the legacy `attention-hook.sh` byte for
@@ -50,6 +56,8 @@ pub enum Action {
     Clear,
     /// Append to events.log.
     Event,
+    /// OpenAI Codex's hook: everything from the event name.
+    Codex,
     /// Unknown or missing: do nothing (still exit 0).
     None,
 }
@@ -61,6 +69,7 @@ impl Mode {
             Some("alert") => Action::Alert,
             Some("clear") => Action::Clear,
             Some("event") => Action::Event,
+            Some("codex") => Action::Codex,
             _ => Action::None,
         };
         Mode { action, log_too: args.get(1).map(String::as_str) == Some("event") }
@@ -82,8 +91,43 @@ pub fn run(mode: Mode, input: &str, state_dir: &Path, now_unix: u64) {
         Action::Alert => write_alert(&v, state_dir),
         Action::Clear => touch_clear(&v, state_dir),
         Action::Event => log_event(&v, state_dir, now_unix),
+        Action::Codex => run_codex(&v, state_dir, now_unix),
         Action::None => Ok(()),
     };
+}
+
+/// One Codex hook call.
+fn run_codex(v: &Value, dir: &Path, now_unix: u64) -> io::Result<()> {
+    let event = v.get("hook_event_name").and_then(Value::as_str).unwrap_or("unknown");
+    let name = sanitize(event);
+    let sid = v.get("session_id").map(jq_tostring).map(|s| sanitize(&s)).filter(|s| !s.is_empty());
+    let line =
+        format!("{now_unix} {}{name} {}\n", clawdmeter_core::events::CODEX_PREFIX, sid.as_deref().unwrap_or("-"));
+    let f = dir.join("events.log");
+    if fs::metadata(&f).is_ok_and(|m| m.is_file() && m.len() > EVENTS_ROLL_BYTES) {
+        let _ = fs::rename(&f, dir.join("events.log.1"));
+    }
+    OpenOptions::new().create(true).append(true).open(&f)?.write_all(line.as_bytes())?;
+    match event {
+        "PermissionRequest" => write_codex_alert(v, dir),
+        "UserPromptSubmit" | "PostToolUse" | "Stop" | "Interrupt" | "SessionEnd" => touch_clear(v, dir),
+        _ => Ok(()),
+    }
+}
+
+/// The attention file for a Codex permission request: kind `codex`, the
+/// tool's name as the message (only the kind's fixed line reaches the device).
+fn write_codex_alert(v: &Value, dir: &Path) -> io::Result<()> {
+    let mut out = Map::new();
+    out.insert("k".into(), Value::String(AlertKind::Codex.as_str().into()));
+    let tool = v.get("tool_name").and_then(Value::as_str).unwrap_or("");
+    out.insert("m".into(), Value::String(sanitize(tool)));
+    out.insert("s".into(), v.get("session_id").cloned().unwrap_or(Value::Null));
+    let tmp = dir.join(format!("attention.{}", std::process::id()));
+    fs::write(&tmp, Value::Object(out).to_string() + "\n")?;
+    fs::rename(&tmp, dir.join("attention")).inspect_err(|_| {
+        let _ = fs::remove_file(&tmp);
+    })
 }
 
 /// jq's `//`: the value unless it is missing, null or false.
@@ -251,6 +295,32 @@ mod tests {
 
     fn args(s: &str) -> Vec<String> {
         s.split_whitespace().map(str::to_owned).collect()
+    }
+
+    #[test]
+    fn codex_hook() {
+        let d = dir("codex");
+        fs::create_dir_all(&d).unwrap();
+        let ask = json!({"hook_event_name": "PermissionRequest", "session_id": "019a-x", "tool_name": "exec_command",
+                         "transcript_path": "/h/.codex/sessions/2026/11/16/rollout.jsonl"});
+        run(Mode::parse(&args("codex")), &ask.to_string(), &d, 100);
+        let log = fs::read_to_string(d.join("events.log")).unwrap();
+        assert_eq!(log, "100 codex.PermissionRequest 019a-x\n", "no account: Codex isn't a Claude config dir");
+        let alert: Value = serde_json::from_str(&fs::read_to_string(d.join("attention")).unwrap()).unwrap();
+        assert_eq!(alert, json!({"k": "codex", "m": "exec_command", "s": "019a-x"}));
+        run(
+            Mode::parse(&args("codex")),
+            &json!({"hook_event_name": "PostToolUse", "session_id": "019a-x"}).to_string(),
+            &d,
+            101,
+        );
+        assert!(d.join("clear-019a-x").exists());
+        let ev = clawdmeter_core::events::parse_line(
+            fs::read_to_string(d.join("events.log")).unwrap().lines().last().unwrap(),
+        )
+        .unwrap();
+        assert!(matches!(ev.kind, clawdmeter_core::events::HookKind::Codex(_)));
+        let _ = fs::remove_dir_all(&d);
     }
 
     #[test]

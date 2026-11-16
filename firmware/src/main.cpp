@@ -621,10 +621,19 @@ void loop() {
             if (usage.liveliness > 0) liveliness_set(usage.liveliness);
             if (usage.attn_anim_s >= 0) attn_anim_set(usage.attn_anim_s);
             director_on_payload(&usage, &sig);
+            // Codex's own hook events: the cloud reacts on its page.
+            {
+                static uint32_t last_oes = 0;
+                if (usage.has_codex_event_seq && usage.codex_event_seq != last_oes) {
+                    last_oes = usage.codex_event_seq;
+                    if (usage.codex_event == 'p') idle_note_activity();
+                    director_codex_event(usage.codex_event);
+                }
+            }
             if (usage.alert_msg[0]) {
-                Serial.println("attention — mascot");
+                Serial.println(usage.alert_codex ? "attention — codex" : "attention — mascot");
                 idle_note_activity();
-                director_alert(usage.alert_msg);
+                director_alert(usage.alert_msg, usage.alert_codex);
             }
             if (usage.alert_clear) director_alert_clear();
             if (g_after != g_before)

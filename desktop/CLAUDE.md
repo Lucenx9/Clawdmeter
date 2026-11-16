@@ -55,7 +55,9 @@ is faked behind `FlashHardware`.
   window (`ui/`), `daemon.rs` (drives the engine on its own thread: 0.5 s
   tick, config re-read every 5 s and on `Command::ReloadSettings`),
   `hooks/` (`clawdmeter hook alert|clear|event` and the settings.json
-  installer), `ipc.rs` (single-instance lock, status file, command queues,
+  installer; `hook codex` and `install::install_codex` for OpenAI Codex's
+  `hooks.json`: events logged as `codex.<Name>`, a `PermissionRequest` is an
+  `AlertKind::Codex` alert, never Claude activity), `ipc.rs` (single-instance lock, status file, command queues,
   window lock), `onboarding.rs`, `boards.rs` (names, buy links,
   illustrations), `chime.rs`.
 

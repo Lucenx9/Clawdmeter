@@ -533,7 +533,7 @@ impl AlertOn {
     pub fn allows(&self, kind: crate::attention::AlertKind) -> bool {
         use crate::attention::AlertKind as K;
         match kind {
-            K::Permission | K::Other => self.permission,
+            K::Permission | K::Other | K::Codex => self.permission,
             K::Question => self.question,
             K::Idle => self.idle,
             K::Elicitation => self.elicitation,

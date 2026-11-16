@@ -22,6 +22,8 @@
 //       (button_action.h), -1 absent or unknown
 //   os  osr  ow  owr  the Codex page: 5-hour and weekly % used and minutes to
 //       reset (-1 absent / unknown); no os and no ow = no Codex page
+//   ax  1 = the alert in `m` is Codex's (shown on the Codex page)
+//   oe  oes  latest Codex hook event ('p' prompt, 's' stop) and its sequence
 //   th  the palette: TH_COUNT 6-digit hex colours run together (theme_palette.h);
 //       has_theme false when absent or malformed
 //

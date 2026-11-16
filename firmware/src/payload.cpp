@@ -104,6 +104,12 @@ bool payload_parse(const char* json, UsageData* out, const char** err) {
     d.codex_weekly_pct  = ow.is<int>() ? (int16_t)(ow.as<int>() < 0 ? 0 : ow.as<int>() > 999 ? 999 : ow.as<int>()) : -1;
     d.codex_session_reset_mins = doc["osr"] | -1;
     d.codex_weekly_reset_mins  = doc["owr"] | -1;
+    d.alert_codex = doc["ax"].as<bool>();
+    const char* oe = doc["oe"] | "";
+    d.codex_event = oe[0];
+    JsonVariant oes = doc["oes"];
+    d.has_codex_event_seq = !oes.isNull();
+    d.codex_event_seq = d.has_codex_event_seq ? oes.as<uint32_t>() : 0;
 
     d.ok = doc["ok"] | false;
     d.valid = true;

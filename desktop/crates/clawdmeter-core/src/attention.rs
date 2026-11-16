@@ -51,6 +51,10 @@ pub enum AlertKind {
     Elicitation,
     /// Any other notification type; follows [`AlertKind::Permission`].
     Other,
+    /// OpenAI Codex asks for permission (its `PermissionRequest` hook);
+    /// follows [`AlertKind::Permission`]. The device shows it on the Codex
+    /// page (`ax`).
+    Codex,
 }
 
 impl AlertKind {
@@ -62,6 +66,7 @@ impl AlertKind {
             AlertKind::Idle => "idle",
             AlertKind::Elicitation => "elicitation",
             AlertKind::Other => "other",
+            AlertKind::Codex => "codex",
         }
     }
 
@@ -73,6 +78,7 @@ impl AlertKind {
             Some("question") => AlertKind::Question,
             Some("idle") => AlertKind::Idle,
             Some("elicitation") => AlertKind::Elicitation,
+            Some("codex") => AlertKind::Codex,
             Some(_) => AlertKind::Other,
         }
     }
@@ -97,6 +103,7 @@ impl AlertKind {
             AlertKind::Permission | AlertKind::Other => "Permission needed!",
             AlertKind::Idle => "Waiting for you!",
             AlertKind::Elicitation => "MCP request!",
+            AlertKind::Codex => "Codex needs you!",
         }
     }
 }
@@ -222,6 +229,8 @@ pub struct AttentionState {
 /// Fields to merge into the next payload.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct AttentionFields {
+    /// The alert being sent is Codex's (`ax`).
+    pub codex: bool,
     /// `b`: beep (only when the user opted in).
     pub beep: bool,
     /// `m`: message for the status line.
@@ -297,6 +306,7 @@ impl AttentionState {
         if self.alert_unsent {
             f.beep = beep_on;
             f.message = self.alert.as_ref().map(|a| a.device_message().to_owned());
+            f.codex = self.alert.as_ref().is_some_and(|a| a.kind == AlertKind::Codex);
         }
         f.clear = self.clear_unsent;
         f
@@ -441,7 +451,7 @@ mod tests {
         assert!(st.alert_unsent);
         assert_eq!(
             st.fields(false),
-            AttentionFields { beep: false, message: Some("Permission needed!".into()), clear: false }
+            AttentionFields { beep: false, message: Some("Permission needed!".into()), clear: false, codex: false }
         );
         assert!(st.fields(true).beep);
         st.mark_sent();
@@ -460,7 +470,7 @@ mod tests {
         let same: HashMap<_, _> = [("abc".to_owned(), t0 + Duration::from_secs(2))].into();
         st.ingest(None, &same);
         assert!(st.alert.is_none() && st.clear_unsent);
-        assert_eq!(st.fields(true), AttentionFields { beep: false, message: None, clear: true });
+        assert_eq!(st.fields(true), AttentionFields { beep: false, message: None, clear: true, codex: false });
         st.mark_sent();
 
         // Same second, later by 0.5 s: still clears.

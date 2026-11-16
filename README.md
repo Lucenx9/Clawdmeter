@@ -18,7 +18,10 @@ weekly windows from `chatgpt.com/backend-api/wham/usage` every 5 minutes
 alternates between Claude's meters and Codex's every 10 seconds. Codex's page
 has its own black-and-white look, a `> verb_` status line, and its own
 animated pixel-art Codex cloud, which hops into the seat after Clawd walks off. A window
-Codex's plan doesn't have is left out. Set a button to **Claude / Codex**
+Codex's plan doesn't have is left out. Run `clawdmeter --install-codex-hooks` to add Clawdmeter to Codex's hooks
+(`~/.codex/hooks.json`, next to any others; Codex asks to trust them once):
+the cloud then reacts to your Codex prompts, and a Codex permission request
+becomes an alert on the Codex page. Set a button to **Claude / Codex**
 (`button_secondary = page` in the config) to switch pages by hand, or
 `codex = off` to turn it off.
 

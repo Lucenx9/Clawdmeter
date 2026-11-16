@@ -241,6 +241,10 @@ void codex_sprite_hop(void) { if (c_state == C_SEATED) { c_state = C_HOP; c_unti
 bool codex_sprite_visible(void) { return c_state != C_AWAY; }
 bool codex_sprite_busy(void) { return c_state == C_IN || c_state == C_OUT || c_state == C_HOP; }
 void codex_sprite_set_minimal(bool) {}
+static bool c_alert = false;
+void codex_sprite_react(char e) { if (e == 's') codex_sprite_hop(); }
+void codex_sprite_alert(bool on) { c_alert = on; }
+bool fake_codex_alerting(void) { return c_alert && c_state != C_AWAY; }
 void codex_sprite_repaint(void) {}
 void codex_sprite_tick(void) {
     if (!done(c_until)) return;

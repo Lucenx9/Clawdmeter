@@ -149,8 +149,12 @@ static void fuzz(uint32_t seed, uint32_t total_ms, bool has_big) {
         }
         case 14:         director_set_liveliness((int)fz_range(1, 5)); continue;
         case 15:
-            if (fz_next() % 2) world.codex = !world.codex;   // the app starts / stops sending Codex
-            else               director_page_button();       // a button set to "page"
+            switch (fz_next() % 4) {
+            case 0:  world.codex = !world.codex; break;                // the app starts / stops sending Codex
+            case 1:  director_page_button(); break;                    // a button set to "page"
+            case 2:  director_alert("Codex needs you!", true); break;  // Codex asks
+            default: director_codex_event("ps"[fz_next() % 2]); break; // Codex prompt / stop
+            }
             continue;
         default:         break;                   // a quiet stretch
         }
@@ -201,6 +205,43 @@ static void test_codex_page_turns_and_yields_to_attention(void) {
     run_for(2 * CODEX_PAGE_MS);
     TEST_ASSERT_EQUAL_STRING("home", director_beat_name());
     TEST_ASSERT_FALSE(ui_codex_page());
+    assert_one_clawd();
+    director_set_liveliness(CLAWD_LIVELINESS_DEFAULT);
+}
+
+// A Codex alert: the cloud fetches you on the Codex page (Clawd stays out);
+// a tap ends it and tells the app. A Claude alert meanwhile hands over to
+// Clawd.
+static void test_codex_alert_on_the_codex_page(void) {
+    world.codex = true;
+    fresh_director();
+    director_set_liveliness(1);
+    page_since = fake_now_ms;
+    run_for(2000);
+    director_alert("Codex needs you!", true);
+    run_for(4000);
+    TEST_ASSERT_EQUAL_STRING("codex", director_beat_name());
+    TEST_ASSERT_TRUE(ui_codex_page());
+    TEST_ASSERT_TRUE(fake_codex_alerting());
+    run_for(CODEX_PAGE_MS + 2000);                // the alert holds the page past its time
+    TEST_ASSERT_TRUE(ui_codex_page());
+    director_tap(100);
+    TEST_ASSERT_TRUE(director_take_dismissed());
+    TEST_ASSERT_FALSE(fake_codex_alerting());
+    run_for(CODEX_PAGE_MS + 6000);                // its usual time, then back
+    TEST_ASSERT_FALSE(ui_codex_page());
+    TEST_ASSERT_TRUE(fake_corner_seated_still());
+    // Codex asks, then Claude asks too: Clawd takes over.
+    director_alert("Codex needs you!", true);
+    run_for(4000);
+    TEST_ASSERT_EQUAL_STRING("codex", director_beat_name());
+    director_alert("needs you");
+    run_for(6000);
+    TEST_ASSERT_EQUAL_STRING("attention", director_beat_name());
+    TEST_ASSERT_FALSE(ui_codex_page());
+    director_tap(100);
+    world.codex = false;
+    run_for(2 * CODEX_PAGE_MS);
     assert_one_clawd();
     director_set_liveliness(CLAWD_LIVELINESS_DEFAULT);
 }
@@ -377,6 +418,7 @@ int main(int, char**) {
     UNITY_BEGIN();
     RUN_TEST(test_screensaver_calm_dip_keeps_one_clawd);
     RUN_TEST(test_codex_page_turns_and_yields_to_attention);
+    RUN_TEST(test_codex_alert_on_the_codex_page);
     RUN_TEST(test_fuzz_one_clawd_with_full_size_sprite);
     RUN_TEST(test_fuzz_one_clawd_without_full_size_sprite);
     RUN_TEST(test_no_nonsense_sits_still_through_everything_but_taps);

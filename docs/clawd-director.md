@@ -243,6 +243,16 @@ creature on screen (`test_director` counts the Codex cloud too):
 
 Minimal mode swaps the page and the still sprites with no walk or hop.
 
+**Codex's alert** (`ax`, its `PermissionRequest` hook) lives on the Codex
+page: from home it goes straight to codex-in (a face or a performance gets
+out of the way first, as for any alert), and the cloud keeps hopping and
+leaning its prompt at you for the attention animation's time; the page stays
+until a tap, a clear or the timeout, then runs its usual 10 s. Clawd is never
+fetched for it. If Claude asks too, Clawd takes over: the cloud stops, the
+page turns back and he comes to fetch you. **Codex's events** (`oe`): on the
+Codex page a prompt makes the cloud think (three dots) and a stop makes it
+hop; a prompt also wakes the screensaver.
+
 ## Animation principles and implementation
 
 | Principle | Implementation |
