@@ -52,6 +52,9 @@ struct Layout {
     const lv_font_t* pace_font;
     const char* const* pills;        // PILL_TEXT or PILL_TEXT_SHORT (ui_text.h)
     const char* const* codex_pills;  // the Codex page's 5-hour and weekly pills (CODEX_PILL_SETS)
+    const lv_font_t* codex_pct_font;    // the Codex page's cards, in Geist Mono (fit_codex)
+    const lv_font_t* codex_pill_font;
+    const lv_font_t* codex_reset_font;
 
     // Status line, centred at the bottom.
     const lv_font_t* status_font;

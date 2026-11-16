@@ -28,6 +28,18 @@ for size in 32 18; do
 done
 ```
 
+The Codex page's cards use Geist Mono (SIL Open Font License,
+`assets/GeistMono-OFL.txt`, from the `geist` npm package), size for size
+with Styrene (`layout.cpp` `fit_codex`):
+
+```bash
+for size in 48 28 24 20 16 14 12; do
+  lv_font_conv --font assets/GeistMono-Regular.ttf -r 0x20-0x7E \
+    --size "$size" --format lvgl --bpp 4 --no-compress \
+    -o "firmware/src/font_geist_mono_${size}.c" --lv-include "lvgl.h"
+done
+```
+
 Keep `--no-compress`. This converter emits the LVGL 8 structure layout;
 match the generated files to the LVGL 9 structures used in this repository:
 

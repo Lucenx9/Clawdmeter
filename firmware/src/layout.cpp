@@ -14,6 +14,13 @@ LV_FONT_DECLARE(font_styrene_14);
 LV_FONT_DECLARE(font_styrene_12);
 LV_FONT_DECLARE(font_mono_32);
 LV_FONT_DECLARE(font_mono_18);
+LV_FONT_DECLARE(font_geist_mono_48);
+LV_FONT_DECLARE(font_geist_mono_28);
+LV_FONT_DECLARE(font_geist_mono_24);
+LV_FONT_DECLARE(font_geist_mono_20);
+LV_FONT_DECLARE(font_geist_mono_16);
+LV_FONT_DECLARE(font_geist_mono_14);
+LV_FONT_DECLARE(font_geist_mono_12);
 
 // ─── Text metrics ────────────────────────────────────────────────────────────
 
@@ -485,19 +492,55 @@ static bool place_round(Layout& L, const Design& d, const Chrome** chrome) {
 
 // ─── Entry point ─────────────────────────────────────────────────────────────
 
-// The Codex page's pills: the longest set whose row fits the cards as laid
-// out for Claude (the last set always applies).
-static void fit_codex_pills(Layout& L) {
+// The Codex page sets its cards in Geist Mono, size for size with the
+// Styrene sizes of Claude's page (smallest last).
+static const lv_font_t* const STYRENE_SIZES[] = {
+    &font_styrene_48, &font_styrene_28, &font_styrene_24, &font_styrene_20,
+    &font_styrene_16, &font_styrene_14, &font_styrene_12,
+};
+static const lv_font_t* const GEIST_SIZES[] = {
+    &font_geist_mono_48, &font_geist_mono_28, &font_geist_mono_24, &font_geist_mono_20,
+    &font_geist_mono_16, &font_geist_mono_14, &font_geist_mono_12,
+};
+#define CODEX_FONT_SIZES 7
+
+static int size_index(const lv_font_t* f) {
+    for (int i = 0; i < CODEX_FONT_SIZES; i++)
+        if (STYRENE_SIZES[i] == f) return i;
+    return CODEX_FONT_SIZES - 1;
+}
+
+static const lv_font_t* geist(int i) { return GEIST_SIZES[i < CODEX_FONT_SIZES ? i : CODEX_FONT_SIZES - 1]; }
+
+// The Codex page's fonts and pills, fitted to the cards as laid out for
+// Claude (which they never change): Geist Mono at Claude's sizes, stepped
+// down until "100%" beside the longest pill set that fits (and, apart, the
+// widest reset line) fit a card. Where even the smallest doesn't fit (the
+// narrowest panels) that line keeps Claude's font and pills, which fit.
+static void fit_codex(Layout& L) {
     const int16_t inner = L.card[0].w - 2 * L.pad_x;
-    const int16_t room = inner - layout_text_width(L.pct_font, "100%") - PILL_GAP - 2 * L.pill_pad_x;
     const int n = sizeof(CODEX_PILL_SETS) / sizeof(CODEX_PILL_SETS[0]);
-    L.codex_pills = CODEX_PILL_SETS[n - 1];
-    for (int i = 0; i < n; i++) {
-        if (widest(L.pill_font, CODEX_PILL_SETS[i], 2) <= room) {
-            L.codex_pills = CODEX_PILL_SETS[i];
-            return;
+    const int ip = size_index(L.pct_font), il = size_index(L.pill_font), ir = size_index(L.reset_font);
+    L.codex_reset_font = L.reset_font;
+    for (int i = ir; i < CODEX_FONT_SIZES; i++) {
+        if (widest(GEIST_SIZES[i], RESET_TEXT_WIDEST, 2) <= inner) { L.codex_reset_font = GEIST_SIZES[i]; break; }
+    }
+    for (int step = 0; step < CODEX_FONT_SIZES; step++) {
+        const lv_font_t* pf = geist(ip + step);
+        const lv_font_t* lf = geist(il + step);
+        const int16_t room = inner - layout_text_width(pf, "100%") - PILL_GAP - 2 * L.pill_pad_x;
+        for (int i = 0; i < n; i++) {
+            if (widest(lf, CODEX_PILL_SETS[i], 2) <= room) {
+                L.codex_pct_font = pf;
+                L.codex_pill_font = lf;
+                L.codex_pills = CODEX_PILL_SETS[i];
+                return;
+            }
         }
     }
+    L.codex_pct_font = L.pct_font;
+    L.codex_pill_font = L.pill_font;
+    L.codex_pills = CODEX_PILL_SETS[n - 1];
 }
 
 Layout layout_compute(const LayoutShape& shape) {
@@ -528,7 +571,7 @@ Layout layout_compute(const LayoutShape& shape) {
     fit_title(L, *c);
     fit_pairing(L, *d);
     fit_period(L);
-    fit_codex_pills(L);
+    fit_codex(L);
     return L;
 }
 

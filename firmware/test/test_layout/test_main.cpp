@@ -159,9 +159,12 @@ static void check_panel(const Panel& p) {
     for (int i : { 0, 1, 3 })   // session, weekly, period: "100%" beside the pill
         if (text_w(L.pct_font, "100%") + pill_w + text_w(L.pill_font, L.pills[i]) > inner_w)
             fail("percentage vs pill", card(i == 0 ? 0 : 1));
-    for (int i : { 0, 1 })   // the Codex page's pills
-        if (text_w(L.pct_font, "100%") + pill_w + text_w(L.pill_font, L.codex_pills[i]) > inner_w)
+    for (int i : { 0, 1 })   // the Codex page's pills, in its Geist Mono
+        if (text_w(L.codex_pct_font, "100%") + pill_w + text_w(L.codex_pill_font, L.codex_pills[i]) > inner_w)
             fail("percentage vs Codex pill", card(i));
+    for (int i : { 0, 1 })
+        if (text_w(L.codex_reset_font, RESET_TEXT_WIDEST[i]) > inner_w) fail("Codex reset line", card(0));
+    if (1 + 2 * L.pill_pad_y + ink_h(L.codex_pill_font) > L.bar_y) fail("Codex pill vs bar", card(0));
     if (text_w(L.ent_pct_font, "100") + 4 + text_w(L.reset_font, "%") + pill_w
         + text_w(L.pill_font, L.pills[2]) > inner_w)
         fail("spending vs pill", card(0));

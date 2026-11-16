@@ -230,6 +230,14 @@ static bool have_last_data = false;
 // payload carries it.
 static int      page = 0;
 static void render_page(void);
+// The cards' fonts for the page on screen: Claude's Styrene, or the Codex
+// page's Geist Mono (layout.cpp fit_codex).
+static const lv_font_t* cur_pct_font = nullptr;
+static const lv_font_t* cur_reset_font = nullptr;
+
+// The Codex mark's gradient, light violet to deep blue: the Codex page's bars.
+#define CODEX_BAR_FROM 0xB1A7FF
+#define CODEX_BAR_TO   0x3941FF
 
 static lv_color_t bar_color(float used_pct, int reset_mins, int window_mins) {
     if (pace_marker) {
@@ -640,8 +648,34 @@ void ui_init(void) {
     anim_verb_idx = fitting_verb(0);
 }
 
+static void bar_gradient(lv_obj_t* bar, bool on) {
+    lv_obj_set_style_bg_grad_dir(bar, on ? LV_GRAD_DIR_HOR : LV_GRAD_DIR_NONE, LV_PART_INDICATOR);
+    if (on) lv_obj_set_style_bg_grad_color(bar, lv_color_hex(CODEX_BAR_TO), LV_PART_INDICATOR);
+}
+
+// A Codex bar: the Codex gradient, red once the limit is reached.
+static void codex_bar(lv_obj_t* bar, float pct) {
+    const bool full = pct >= 100.0f;
+    lv_obj_set_style_bg_color(bar, full ? COL_RED : lv_color_hex(CODEX_BAR_FROM), LV_PART_INDICATOR);
+    bar_gradient(bar, !full);
+}
+
+static bool codex_shown(void) { return page == 1 && have_last_data && usage_has_codex(&last_data); }
+
 // The Pro/Max bars' fill colours and pace markers.
 static void apply_bar_colors(const UsageData* data) {
+    if (codex_shown() && !board_caps().mono_panel) {
+        // The Codex page: its own colours, no pace colouring (the marker
+        // line still shows where the window is).
+        codex_bar(bar_session, data->session_pct);
+        codex_bar(bar_weekly, data->weekly_pct);
+        place_pace_tick(tick_session, pace_elapsed_pct(data->session_reset_mins,
+                        data->weekly_only ? PACE_WEEK_MINS : PACE_SESSION_MINS));
+        place_pace_tick(tick_weekly, data->weekly_only ? -1.0f : pace_elapsed_pct(data->weekly_reset_mins, PACE_WEEK_MINS));
+        return;
+    }
+    bar_gradient(bar_session, false);
+    bar_gradient(bar_weekly, false);
     if (data->enterprise) {
         // Spending has no 5-hour window, and the Period bar (coloured in
         // ui_update) already is the elapsed share: no markers.
@@ -754,9 +788,28 @@ static UsageData codex_view(const UsageData* d, const char** pills) {
 static void render_meters(const UsageData* data, const char* const* pills);
 
 // Draw the current page from the last payload.
+// The cards' fonts: Geist Mono on the Codex page, Styrene on Claude's.
+static void apply_page_fonts(bool codex) {
+    cur_pct_font   = codex ? L.codex_pct_font : L.pct_font;
+    cur_reset_font = codex ? L.codex_reset_font : L.reset_font;
+    const lv_font_t* pill = codex ? L.codex_pill_font : L.pill_font;
+    lv_obj_set_style_text_font(lbl_session_pct, cur_pct_font, 0);
+    lv_obj_set_style_text_font(lbl_weekly_pct, cur_pct_font, 0);
+    lv_obj_set_style_text_font(lbl_session_reset, cur_reset_font, 0);
+    lv_obj_set_style_text_font(lbl_weekly_reset, cur_reset_font, 0);
+    lv_obj_set_style_text_font(lbl_session_label, pill, 0);
+    lv_obj_set_style_text_font(lbl_weekly_label, pill, 0);
+}
+
 static void render_page(void) {
     if (!have_last_data) return;
-    if (page == 1 && usage_has_codex(&last_data)) {   // else Claude's numbers until the director turns back
+    const bool codex = page == 1 && usage_has_codex(&last_data);
+    static int fonts_for = -1;   // the page the fonts are set for
+    if (fonts_for != (int)codex) {
+        fonts_for = codex;
+        apply_page_fonts(codex);
+    }
+    if (codex) {   // else Claude's numbers until the director turns back
         const char* pills[PILL_COUNT];
         for (int i = 0; i < PILL_COUNT; i++) pills[i] = L.pills[i];
         shown_data = codex_view(&last_data, pills);
@@ -801,7 +854,7 @@ static void render_meters(const UsageData* data, const char* const* pills) {
     } else {
         // No 5-hour limit (verified Ultra): the week moves up into the first
         // card and the second card goes away.
-        lv_obj_set_style_text_font(lbl_session_pct, L.pct_font, 0);
+        lv_obj_set_style_text_font(lbl_session_pct, cur_pct_font ? cur_pct_font : L.pct_font, 0);
         lv_label_set_text(lbl_session_label, pills[data->weekly_only ? 1 : 0]);
         lv_obj_clear_flag(lbl_session_reset, LV_OBJ_FLAG_HIDDEN);
         lv_obj_add_flag(lbl_session_pct_sym, LV_OBJ_FLAG_HIDDEN);
@@ -840,7 +893,7 @@ static void render_meters(const UsageData* data, const char* const* pills) {
         lv_label_set_text_fmt(lbl_weekly_pct, "%d%%", w_pct);
         lv_bar_set_value(bar_weekly, w_pct, LV_ANIM_ON);
         format_reset_time(data->weekly_reset_mins, buf, sizeof(buf), "---");
-        lv_obj_set_style_text_font(lbl_weekly_reset, L.reset_font, 0);
+        lv_obj_set_style_text_font(lbl_weekly_reset, cur_reset_font ? cur_reset_font : L.reset_font, 0);
         lv_label_set_text(lbl_weekly_reset, buf);
     }
     apply_bar_colors(data);
