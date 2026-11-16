@@ -188,6 +188,7 @@ static void end_attention(AttnEnd how) {
         resume_screensaver = false;
         page_since = now_ms();
         Serial.printf("[%lu] director: codex attention over\n", (unsigned long)now_ms());
+        if (beat == B_ATTENTION && step == 0) next_step();   // never left waiting
         return;
     }
     resume_screensaver = attention_resumes_screensaver(attn_from, how, engaged);
@@ -205,6 +206,9 @@ void director_alert(const char* message, bool codex) {
         attention_codex = false;
         codex_sprite_alert(false);
     }
+    // With no Codex numbers to show its page would carry Claude's: Clawd
+    // fetches you for it instead.
+    if (codex && !ui_codex_available()) codex = false;
     if (!attention_on) attention_codex = codex;
     if (!attention_on) {
         // Remember what it interrupts, so it can return there. A new alert
@@ -227,6 +231,12 @@ void director_alert(const char* message, bool codex) {
     ui_set_alert_text(message);
     if (attention_on) return;                 // refresh text + timers only
     attention_on = true;
+    if (beat == B_ATTENTION && attention_codex) {
+        // Claude's alert is still winding down: let it finish (its exit
+        // routes to the Codex page, run_attention) rather than restart it.
+        if (step == 0) { mascot_attention(false, true); next_step(); }
+        return;
+    }
     if (beat == B_ATTENTION) { step = 0; return; }
     if (attention_codex) {
         // Codex's alert lives on the Codex page: from wherever we are, the
@@ -653,6 +663,7 @@ static void run_attention(uint32_t now) {
     // Over: wait for the big one to leave and the small one to sit down (or,
     // when the screensaver resumes, to stay out of sight).
     if (mascot_in_attention() || mascot_busy()) return;
+    if (attention_on && attention_codex) { go(B_CODEX_IN); return; }   // Codex asked meanwhile
     if (resume_screensaver) {
         resume_screensaver = false;
         if (!minimal && ui_meters_live()) { go(B_SCREENSAVER); return; }
@@ -741,6 +752,12 @@ static void run_codex_in(uint32_t now) {
 }
 
 static void run_codex(uint32_t now) {
+    if (attention_on && attention_codex && !ui_codex_available()) {
+        // Codex's numbers went away mid-alert: Clawd carries it from here
+        // (the cloud leaves below and arrive_meters fetches him).
+        attention_codex = false;
+        codex_sprite_alert(false);
+    }
     if (attention_on && attention_codex) {
         // Codex's alert: the cloud keeps at it for the attention animation's
         // time, then idles; the page stays until a tap, a clear or the timeout.

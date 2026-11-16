@@ -753,9 +753,12 @@ mod tests {
 /// The Codex hook events Clawdmeter follows (`clawdmeter hook codex`).
 pub const CODEX_EVENTS: &[&str] = &["UserPromptSubmit", "PostToolUse", "Stop", "PermissionRequest", "Interrupt"];
 
-/// Whether a Codex hook command is ours: `<exe> hook codex`.
+/// Whether a Codex hook command is ours: exactly `<…/clawdmeter> hook codex`
+/// (the executable's file name is `clawdmeter`, nothing before or after).
 fn codex_ours(cmd: &str) -> bool {
-    cmd.trim_end().ends_with(" hook codex") && cmd.contains("clawdmeter")
+    let Some((exe, rest)) = first_word(cmd) else { return false };
+    let name = Path::new(&exe.replace('\\', "/")).file_name().and_then(|n| n.to_str()).map(str::to_owned);
+    matches!(name.as_deref(), Some("clawdmeter" | "clawdmeter.exe")) && rest.split_whitespace().eq(["hook", "codex"])
 }
 
 /// `hooks.json` with Clawdmeter's Codex hooks in (one group per event, its
@@ -832,6 +835,13 @@ mod codex_tests {
         assert_eq!(stop[1]["hooks"][0]["command"], "/opt/clawdmeter hook codex");
         assert_eq!(merge_codex(Some(&b), Path::new("/opt/clawdmeter")).unwrap(), b, "idempotent");
         assert!(merge_codex(Some("[1]"), Path::new("/x")).is_err());
+        // Someone else's command that merely mentions clawdmeter is kept.
+        let other = r#"{"hooks":{"Stop":[{"hooks":[{"command":"/opt/clawdmeter-backup/audit hook codex","type":"command"}],"matcher":""}]}}"#;
+        let v: serde_json::Value =
+            serde_json::from_str(&merge_codex(Some(other), Path::new("/x/clawdmeter")).unwrap()).unwrap();
+        assert_eq!(v["hooks"]["Stop"].as_array().unwrap().len(), 2, "not ours: kept");
+        assert!(codex_ours("'/a b/clawdmeter' hook codex"));
+        assert!(!codex_ours("/usr/bin/clawdmeter hook codex && rm -rf /"));
         assert!(merge_codex(None, Path::new("/x")).unwrap().contains("PermissionRequest"));
     }
 }

@@ -68,7 +68,7 @@ static bool in_body(const CodexBody& b, int gx, int gy) {
 }
 
 static void draw(const Look& l) {
-    if (!img || !buf) return;
+    if (!img || !buf || l.body > CODEX_BODY_STRETCH) return;   // nothing drawn yet (shown.body 255)
     const CodexBody& b = CODEX_BODIES[l.body];
     const int w = b.w * cell, h = b.h * cell;
     uint16_t* color = (uint16_t*)buf;

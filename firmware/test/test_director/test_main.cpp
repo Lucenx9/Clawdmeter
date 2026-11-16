@@ -248,6 +248,35 @@ static void test_codex_alert_on_the_codex_page(void) {
 
 // The screensaver's faces take turns: Clawd's, then Codex's, while the app
 // sends Codex numbers; only Clawd's without them.
+// Review findings: a Codex alert right after a Claude alert ends (his exit
+// still running) reaches the Codex page instead of stalling the beat; a
+// Codex alert with no Codex numbers is Clawd's to carry.
+static void test_codex_alert_edges(void) {
+    world.codex = true;
+    fresh_director();
+    director_set_liveliness(1);
+    director_alert("needs you");
+    run_for(4000);
+    director_tap(100);                            // Claude's alert ends; he heads home
+    director_alert("Codex needs you!", true);     // ...and Codex asks at once
+    run_for(8000);
+    TEST_ASSERT_EQUAL_STRING("codex", director_beat_name());
+    TEST_ASSERT_TRUE(fake_codex_alerting());
+    director_tap(100);
+    run_for(3 * 60 * 1000);
+    TEST_ASSERT_TRUE(strcmp(director_beat_name(), "attention") != 0);
+    world.codex = false;
+    run_for(2 * CODEX_PAGE_MS);
+    director_alert("Codex needs you!", true);     // no Codex numbers to show
+    run_for(4000);
+    TEST_ASSERT_EQUAL_STRING("attention", director_beat_name());
+    TEST_ASSERT_FALSE(ui_codex_page());
+    director_tap(100);
+    run_for(10000);
+    assert_one_clawd();
+    director_set_liveliness(CLAWD_LIVELINESS_DEFAULT);
+}
+
 static void test_screensaver_faces_take_turns(void) {
     world.codex = true;
     fresh_director();
@@ -437,6 +466,7 @@ int main(int, char**) {
     RUN_TEST(test_codex_page_turns_and_yields_to_attention);
     RUN_TEST(test_codex_alert_on_the_codex_page);
     RUN_TEST(test_screensaver_faces_take_turns);
+    RUN_TEST(test_codex_alert_edges);
     RUN_TEST(test_fuzz_one_clawd_with_full_size_sprite);
     RUN_TEST(test_fuzz_one_clawd_without_full_size_sprite);
     RUN_TEST(test_no_nonsense_sits_still_through_everything_but_taps);
