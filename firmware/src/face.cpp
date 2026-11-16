@@ -71,6 +71,34 @@ static int S(int v) { return v * mind / 480; }
 
 static void apply_eyes(void);
 
+// Codex's face: the Codex mark's gradient, a white ">_" for eyes.
+#define CODEX_FACE_TOP    0xB1A7FF
+#define CODEX_FACE_BOTTOM 0x3941FF
+#define CODEX_FACE_INK    0xFFFFFF
+#define CURSOR_BLINK_MS   530
+static FaceSkin skin = FACE_SKIN_CLAWD;
+static FaceSkin skin_next = FACE_SKIN_CLAWD;
+static bool     cursor_on = true;     // Codex: the terminal cursor's own blink
+
+static void show(lv_obj_t* o, bool on) {
+    if (on) lv_obj_clear_flag(o, LV_OBJ_FLAG_HIDDEN);
+    else    lv_obj_add_flag(o, LV_OBJ_FLAG_HIDDEN);
+}
+
+// What each eye shows. Clawd: the open eyes, or the > < squint. Codex: the
+// left eye is always its ">", the right one the cursor, out while it blinks.
+static void apply_visibility(void) {
+    for (int e = 0; e < 2; e++) {
+        bool open = !squinting, chevron = squinting;
+        if (skin == FACE_SKIN_CODEX) {
+            open = e == 1 && !squinting && cursor_on;
+            chevron = e == 0;
+        }
+        show(eye_open[e], open);
+        for (int i = 0; i < 9; i++) show(squint[e][i], chevron);
+    }
+}
+
 static void set_squint(bool on) {
     if (on != squinting) {
         // Squinting: the box widens to hold the chevron, sized before the
@@ -78,14 +106,7 @@ static void set_squint(bool on) {
         squinting = on;
         apply_eyes();
     }
-    for (int e = 0; e < 2; e++) {
-        if (on) lv_obj_add_flag(eye_open[e], LV_OBJ_FLAG_HIDDEN);
-        else    lv_obj_clear_flag(eye_open[e], LV_OBJ_FLAG_HIDDEN);
-        for (int i = 0; i < 9; i++) {
-            if (on) lv_obj_clear_flag(squint[e][i], LV_OBJ_FLAG_HIDDEN);
-            else    lv_obj_add_flag(squint[e][i], LV_OBJ_FLAG_HIDDEN);
-        }
-    }
+    apply_visibility();
 }
 
 static lv_obj_t* rect(lv_obj_t* parent, int x, int y, int w, int h, lv_color_t c) {
@@ -127,7 +148,7 @@ static void set_eye_objs(void* ctx) {
         if (b.w != l.w || b.h != l.h) lv_obj_set_size(eye_box[e], b.w, b.h);
         if (b.ew != l.ew || b.eh != l.eh) {
             lv_obj_set_size(eye_open[e], b.ew, b.eh);
-            lv_obj_set_pos(eye_open[e], squinting ? S(30) - b.ew / 2 : 0, 0);
+            lv_obj_set_pos(eye_open[e], squinting && skin == FACE_SKIN_CLAWD ? S(30) - b.ew / 2 : 0, 0);
         }
         if (b.x != l.x || b.y != l.y) lv_obj_set_pos(eye_box[e], b.x, b.y);
     }
@@ -156,6 +177,16 @@ static void apply_eyes(void) {
         const int cx = eye_cx[e] + dx[e];
         const int cy = pose.y + eye_top + eye_h0 / 2 + pose.eye_dy;
         EyeBox& b = eye_next[e];
+        if (skin == FACE_SKIN_CODEX) {
+            if (e == 0) {   // ">": the squint chevron's box, always
+                b.x = cx - S(30); b.y = cy - eye_h0 / 2; b.w = box_w0; b.h = box_h0; b.ew = eye_w0; b.eh = eye_h0; b.solid = false;
+            } else {        // "_": a wide bar on the chevron's baseline, stretching like an eye
+                int cw = S(84) * 1000 / (1000 + st), ch = S(18) * (1000 + st) / 1000;
+                cw += cw & 1; ch += ch & 1;
+                b.x = cx - S(30); b.y = cy + eye_h0 / 2 - S(12) - ch; b.w = cw; b.h = ch; b.ew = cw; b.eh = ch; b.solid = true;
+            }
+            continue;
+        }
         if (squinting) { b.x = cx - S(30); b.y = cy - eye_h0 / 2; b.w = box_w0; b.h = box_h0; b.ew = eye_w0; b.eh = eye_h0; b.solid = false; }
         else           { b.x = cx - w / 2; b.y = cy - h / 2;      b.w = w;      b.h = h;      b.ew = w;      b.eh = h;      b.solid = true; }
     }
@@ -309,8 +340,30 @@ static void start_motion(FaceMove m) {
     lv_anim_start(&a);
 }
 
+static void apply_skin(void) {
+    skin = skin_next;
+    const bool codex = skin == FACE_SKIN_CODEX;
+    field.color = codex ? lv_color_hex(CODEX_FACE_TOP) : COL_FACE;
+    field.grad = codex;
+    field.grad_to = lv_color_hex(CODEX_FACE_BOTTOM);
+    const lv_color_t ink = codex ? lv_color_hex(CODEX_FACE_INK) : COL_EYE;
+    for (int e = 0; e < 2; e++) {
+        lv_obj_set_style_bg_color(eye_open[e], ink, 0);
+        for (lv_obj_t* o : squint[e]) if (o) lv_obj_set_style_bg_color(o, ink, 0);
+        eye_last[e].ew = -1;   // the eye boxes change shape: place them again
+    }
+    cursor_on = true;
+    apply_visibility();
+}
+
+void face_set_skin(FaceSkin s) {
+    skin_next = s;
+    if (!visible && root) apply_skin();
+}
+
 static void rise(int interest) {
     if (!root) return;
+    if (!visible) apply_skin();
     interest_g = interest;
     blink_phase = 0; glance_phase = 0;
     set_squint(false);
@@ -365,7 +418,7 @@ void face_blink(bool twice) {
 }
 
 void face_apply_theme(void) {
-    if (!root) return;
+    if (!root || skin == FACE_SKIN_CODEX) return;   // Codex's colours are its own
     field.color = COL_FACE;
     for (int e = 0; e < 2; e++) {
         lv_obj_set_style_bg_color(eye_open[e], COL_EYE, 0);
@@ -420,6 +473,15 @@ static void glance_to(int target) {
 void face_tick(void) {
     if (!root || !visible) return;
     const uint32_t now = millis();
+
+    // Codex's cursor blinks like a terminal's whenever it's up and still.
+    if (skin == FACE_SKIN_CODEX) {
+        const bool on = moving || (now / CURSOR_BLINK_MS) % 2 == 0;
+        if (on != cursor_on) {
+            cursor_on = on;
+            apply_visibility();
+        }
+    }
 
     if (blink_phase && (int32_t)(now - blink_until) >= 0) {
         if (blink_phase == 1 && blink_twice) {

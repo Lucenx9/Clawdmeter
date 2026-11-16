@@ -246,6 +246,23 @@ static void test_codex_alert_on_the_codex_page(void) {
     director_set_liveliness(CLAWD_LIVELINESS_DEFAULT);
 }
 
+// The screensaver's faces take turns: Clawd's, then Codex's, while the app
+// sends Codex numbers; only Clawd's without them.
+static void test_screensaver_faces_take_turns(void) {
+    world.codex = true;
+    fresh_director();
+    fake_face_rises[0] = fake_face_rises[1] = 0;
+    run_for(3 * 60 * 1000);
+    TEST_ASSERT_EQUAL_STRING("screensaver", director_beat_name());
+    TEST_ASSERT_GREATER_THAN(0, fake_face_rises[FACE_SKIN_CODEX]);
+    TEST_ASSERT_INT_WITHIN(1, fake_face_rises[FACE_SKIN_CLAWD], fake_face_rises[FACE_SKIN_CODEX]);
+    world.codex = false;
+    const int codex_before = fake_face_rises[FACE_SKIN_CODEX];
+    run_for(3 * 60 * 1000);
+    TEST_ASSERT_EQUAL(codex_before, fake_face_rises[FACE_SKIN_CODEX]);
+    assert_one_clawd();
+}
+
 static void test_fuzz_one_clawd_with_full_size_sprite(void) {
     memset(seen, 0, sizeof(seen));
     for (uint32_t seed = 1; seed <= 40 && !broke; seed++) fuzz(seed * 2654435761u, 30 * 60 * 1000, true);
@@ -419,6 +436,7 @@ int main(int, char**) {
     RUN_TEST(test_screensaver_calm_dip_keeps_one_clawd);
     RUN_TEST(test_codex_page_turns_and_yields_to_attention);
     RUN_TEST(test_codex_alert_on_the_codex_page);
+    RUN_TEST(test_screensaver_faces_take_turns);
     RUN_TEST(test_fuzz_one_clawd_with_full_size_sprite);
     RUN_TEST(test_fuzz_one_clawd_without_full_size_sprite);
     RUN_TEST(test_no_nonsense_sits_still_through_everything_but_taps);

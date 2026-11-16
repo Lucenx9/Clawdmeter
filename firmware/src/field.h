@@ -32,6 +32,11 @@ struct Field {
     lv_obj_t*  obj;
     FieldShape shape;
     lv_color_t color;
+    // A vertical gradient from `color` (top of the screen) to `grad_to`
+    // (bottom), anchored to the screen rather than the shape, so a moving
+    // shape redrawn in strips stays seamless. Drawn as thin bands.
+    bool       grad;
+    lv_color_t grad_to;
 };
 
 void field_init(Field* f, lv_obj_t* parent, int32_t w, int32_t h, lv_color_t color);

@@ -34,3 +34,10 @@ void face_apply_theme(void);   // pick up a new palette (TH_CLAWD, TH_EYE)
 // the resting glance, far eye 1.5x on top), hold for hold_ms, then come back
 // to you. face_busy() until they're back.
 void face_look_at_x(int x, uint32_t hold_ms);
+
+// Who comes up to the glass: Clawd's face, or Codex's (the Codex mark's
+// violet-to-blue gradient, its ">" as the left eye and a blinking terminal
+// cursor "_" as the right; a blink is the cursor going out). Takes effect at
+// the next rise from out of sight.
+enum FaceSkin { FACE_SKIN_CLAWD, FACE_SKIN_CODEX };
+void face_set_skin(FaceSkin skin);

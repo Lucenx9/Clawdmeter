@@ -15,6 +15,23 @@ void field_shape_init(FieldShape* s) {
     for (int i = 0; i < FIELD_EXTRAS; i++) s->extra[i] = s->body;
 }
 
+// Gradient bands: rows of this many px share a colour.
+#define FIELD_BAND_PX 4
+
+static void draw_area(const Field* f, lv_layer_t* layer, lv_draw_rect_dsc_t* d, const lv_area_t* a) {
+    if (!f->grad) {
+        lv_draw_rect(layer, d, a);
+        return;
+    }
+    const int32_t h = lv_obj_get_height(f->obj);
+    for (int32_t y = a->y1 - a->y1 % FIELD_BAND_PX; y <= a->y2; y += FIELD_BAND_PX) {
+        lv_area_t band = { a->x1, LV_MAX(y, a->y1), a->x2, LV_MIN(y + FIELD_BAND_PX - 1, a->y2) };
+        const int32_t mix = h > 1 ? (int32_t)(255 - (y + FIELD_BAND_PX / 2) * 255 / (h - 1)) : 255;
+        d->bg_color = lv_color_mix(f->color, f->grad_to, (uint8_t)LV_CLAMP(0, mix, 255));
+        lv_draw_rect(layer, d, &band);
+    }
+}
+
 static void draw_cb(lv_event_t* e) {
     const Field* f = (const Field*)lv_event_get_user_data(e);
     const FieldShape* s = &f->shape;
@@ -24,9 +41,9 @@ static void draw_cb(lv_event_t* e) {
     d.bg_opa = LV_OPA_COVER;
     d.radius = 0;
     lv_layer_t* layer = lv_event_get_layer(e);
-    if (!area_empty(&s->body)) lv_draw_rect(layer, &d, &s->body);
+    if (!area_empty(&s->body)) draw_area(f, layer, &d, &s->body);
     for (int i = 0; i < FIELD_EXTRAS; i++)
-        if (!area_empty(&s->extra[i])) lv_draw_rect(layer, &d, &s->extra[i]);
+        if (!area_empty(&s->extra[i])) draw_area(f, layer, &d, &s->extra[i]);
 }
 
 static void inv(lv_obj_t* obj, int32_t x1, int32_t y1, int32_t x2, int32_t y2) {
@@ -59,6 +76,8 @@ void field_invalidate_change(lv_obj_t* obj, const lv_area_t* o, const lv_area_t*
 
 void field_init(Field* f, lv_obj_t* parent, int32_t w, int32_t h, lv_color_t color) {
     f->color = color;
+    f->grad = false;
+    f->grad_to = color;
     field_shape_init(&f->shape);
     f->obj = lv_obj_create(parent);
     lv_obj_remove_style_all(f->obj);

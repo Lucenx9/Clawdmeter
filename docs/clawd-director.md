@@ -243,6 +243,14 @@ creature on screen (`test_director` counts the Codex cloud too):
 
 Minimal mode swaps the page and the still sprites with no walk or hop.
 
+**The screensaver's faces take turns** (`screensaver_rise`): while the app
+sends Codex numbers, every other rise is Codex's face instead of Clawd's
+(`face_set_skin`): the same field, motion, blinks and glances, in the Codex
+mark's violet-to-blue gradient (drawn in screen-anchored bands, `field.cpp`,
+so the strip redraws stay seamless), with a white `>` for the left eye and a
+terminal cursor `_` for the right that blinks on its own; a blink puts the
+cursor out. A peek is always Clawd.
+
 **Codex's alert** (`ax`, its `PermissionRequest` hook) lives on the Codex
 page: from home it goes straight to codex-in (a face or a performance gets
 out of the way first, as for any alert), and the cloud keeps hopping and

@@ -519,6 +519,16 @@ static void run_show(uint32_t now) {
 }
 
 static uint32_t calm_at = 0;
+static bool     ss_codex_next = false;   // the screensaver's next face is Codex's
+
+// Each time a face comes up to the glass in the screensaver, Clawd's and
+// Codex's take turns (Codex only while the app sends its numbers).
+static void screensaver_rise(void) {
+    const bool codex = ss_codex_next && ui_codex_available();
+    face_set_skin(codex ? FACE_SKIN_CODEX : FACE_SKIN_CLAWD);
+    ss_codex_next = !codex && ui_codex_available();
+    face_rise();
+}
 
 static void run_screensaver(uint32_t now) {
     const ClawdTuning& t = clawd_tuning();
@@ -544,7 +554,7 @@ static void run_screensaver(uint32_t now) {
     switch (step) {
     case 1:
         if (!mascot_away()) return;
-        face_rise();
+        screensaver_rise();
         next_step();
         break;
     case 2:
@@ -573,7 +583,7 @@ static void run_screensaver(uint32_t now) {
     case 8:  // off screen: the face comes back up
         if (performer_visible() || !mascot_away()) return;
         performing = false;
-        face_rise();
+        screensaver_rise();
         step = 2;
         break;
     }
@@ -671,6 +681,7 @@ static void run_peek(uint32_t now) {
         break;
     case 1:  // gone: the face rises, curious about the tap
         if (!mascot_away()) return;
+        face_set_skin(FACE_SKIN_CLAWD);   // a peek is always him
         face_rise_toward(peek_x);
         peek_up_at = now;
         next_step();

@@ -31,4 +31,5 @@ OnScreen fake_on_screen(void);
 bool     fake_corner_seated_still(void);   // in his seat, not acting or walking
 bool     fake_attention_animating(void);   // any part of the attention animation on screen
 bool     fake_codex_alerting(void);        // the Codex cloud is fetching you
+extern int fake_face_rises[2];            // face rises per skin (Clawd, Codex)
 int      fake_clawds(const OnScreen& s);

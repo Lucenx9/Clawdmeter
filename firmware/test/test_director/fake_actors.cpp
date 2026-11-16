@@ -209,6 +209,8 @@ void performer_tick(void) {
 // ─── Face (face.h) ───────────────────────────────────────────────────────────
 enum FState { F_HIDDEN, F_RISING, F_UP, F_DROPPING };
 static FState   f_state = F_HIDDEN;
+static FaceSkin f_skin = FACE_SKIN_CLAWD;
+int fake_face_rises[2] = { 0, 0 };   // per skin
 static uint32_t f_until = 0, f_busy_until = 0;
 
 void face_init(void) {}
@@ -217,7 +219,7 @@ void face_tick(void) {
     if (f_state == F_RISING) f_state = F_UP;
     else if (f_state == F_DROPPING) f_state = F_HIDDEN;
 }
-void face_rise(void) { f_state = F_RISING; f_until = now() + 860; }
+void face_rise(void) { f_state = F_RISING; f_until = now() + 860; fake_face_rises[f_skin]++; }
 void face_rise_toward(int) { face_rise(); }
 void face_drop(void) { f_state = F_DROPPING; f_until = now() + 510; }
 void face_hide_now(void) { f_state = F_HIDDEN; }
@@ -227,6 +229,7 @@ bool face_busy(void) { return face_moving() || !done(f_busy_until); }
 void face_blink(bool twice) { f_busy_until = now() + (twice ? 500 : 250); }
 void face_set_resting(bool) {}
 void face_look_at_x(int, uint32_t hold_ms) { f_busy_until = now() + hold_ms + 300; }
+void face_set_skin(FaceSkin s) { f_skin = s; }
 
 // ─── Codex cloud (codex_sprite.h) ────────────────────────────────────────────
 enum CState { C_AWAY, C_IN, C_SEATED, C_HOP, C_OUT };
